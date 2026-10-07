@@ -86,6 +86,18 @@ arm**. Each arm lands at `<root>/<arm>/<arm>` as an MMseqs2 database, which is t
 built is skipped (so an interrupted run resumes, and `FORCE=1` rebuilds), and the 3.4 GB
 patent download resumes rather than restarting.
 
+Every arm is also **indexed** (`mmseqs createindex`). This is what makes the patent arm
+usable: the same 4-sequence `--patent` batch takes **2m17s indexed against 13m17s without**,
+for identical verdicts. On the `uspto` arm alone a single query goes from 4m19s to 43s; the
+smaller arms roughly halve.
+
+**It is expensive in disk.** The index carries ~860 MB of fixed overhead *per arm*, so a
+112 KB arm becomes 859 MB, and it grows faster than the database: the whole set is **55 GB
+indexed against 4.6 GB without**. Budget accordingly, or pass `SKIP_INDEX=1` and accept
+slower searches. `INDEX_MEMORY=4G` raises the memory each index build may use (default 2G);
+an arm built by an earlier run without an index is indexed in place on the next run rather
+than rebuilt.
+
 Each arm comes from a different third-party host, and any of them can be down on the day.
 A failed arm is logged and the run carries on with the rest; the summary at the end names
 what is missing, prints the command to retry just those arms, and exits non-zero. Nothing
@@ -94,22 +106,24 @@ is left half-built: an arm that failed does not look finished to the next run.
 Counts and sizes measured on a build from scratch on 2026-10-07; the upstream sources move,
 so treat them as the order of magnitude rather than a contract.
 
-| arm | entries | on disk | source |
-|---|---|---|---|
-| `thpdb` | 162 | 112 KB | THPdb FDA-approved therapeutics (Figshare) |
-| `therasabdab` | 2,533 | 884 KB | Thera-SAbDab therapeutic antibody chains |
-| `plabdab_nano` | 2,306 | 724 KB | PLAbDab-nano VHH / VNAR / sdAb |
-| `proteinbase_public` | 3,253 | 1.2 MB | published Proteinbase designs (public API) |
-| `plabdab` | 350,350 | 168 MB | PLAbDab paired antibodies |
-| `pdb` | 1,172,061 | 457 MB | PDB seqres chains |
-| `swissprot` | 575,748 | 1.1 GB | UniProtKB/Swiss-Prot |
-| `uspto` | 11,173,221 | 2.8 GB | USPTO patent sequences |
+| arm | entries | database | + index | source |
+|---|---|---|---|---|
+| `thpdb` | 162 | 112 KB | 859 MB | THPdb FDA-approved therapeutics (Figshare) |
+| `therasabdab` | 2,533 | 884 KB | 862 MB | Thera-SAbDab therapeutic antibody chains |
+| `plabdab_nano` | 2,306 | 724 KB | 862 MB | PLAbDab-nano VHH / VNAR / sdAb |
+| `proteinbase_public` | 3,253 | 1.2 MB | 863 MB | published Proteinbase designs (public API) |
+| `plabdab` | 350,350 | 168 MB | 1.4 GB | PLAbDab paired antibodies |
+| `pdb` | 1,172,061 | 457 MB | 5.7 GB | PDB seqres chains |
+| `swissprot` | 575,748 | 1.1 GB | 4.5 GB | UniProtKB/Swiss-Prot |
+| `uspto` | 11,173,221 | 2.8 GB | 33 GB | USPTO patent sequences |
+| **total** | | **4.6 GB** | **55 GB** | |
 
 Everything except `uspto` builds in a couple of minutes on a fast connection — PDB and
 SwissProt come down as prebuilt MMseqs2 databases rather than being built locally. `uspto`
 is the one that costs: a ~3.4 GB download that unpacks to ~9.3 GB, then the conversion and
-`createdb`. Measured end to end at **42 minutes**. It is in the default arm list, so a plain
-run builds it; `SKIP_USPTO=1` leaves a ~1.7 GB set that covers everything but patents.
+`createdb`. Measured end to end at **42 minutes**, plus another 10 for its index.
+It is in the default arm list, so a plain run builds it; `SKIP_USPTO=1` leaves a set that
+covers everything but patents (1.7 GB of database, 14 GB indexed).
 
 `thpdb` comes from the [Figshare deposit](https://figshare.com/articles/dataset/5198005)
 rather than the THPdb web host, which is frequently unreachable. That deposit is a TSV, and
@@ -117,17 +131,10 @@ multi-chain therapeutics pack every chain into one cell, so `scripts/build/thpdb
 splits them apart — 162 distinct chains across 163 therapeutics. The other 76 THPdb entries
 carry no one-letter sequence upstream (`N.A.`, or three-letter notation).
 
-Having the patent database on disk is not the same as searching it: the patent arm is off
-the *query* path by default because it is slow. Measured on a 4-sequence batch against a
-freshly built root, `--patent` took **13 min** against ~70 s for the same batch without it —
-the patent arm was 789 s of the 797. If you intend to use it often, build the index once:
-
-```bash
-mmseqs createindex ~/prescreen-dbs/uspto/uspto tmp --split-memory-limit 2G
-```
-
-It roughly triples that arm's disk use, which is why the build script does not do it for
-you.
+Having the patent database on disk is not the same as searching it. The patent arm is off
+the *query* path by default. On an indexed root a 4-sequence batch takes 2m17s with
+`--patent` against ~70 s without — the patent arm is still 130 s of the 137. Unindexed the
+same batch takes 13m17s, which is what the index is for.
 
 Every arm is verified **by a real search, not by file presence**, before the script calls
 it done. That check exists because `mmseqs createdb` reports success on a file it could not

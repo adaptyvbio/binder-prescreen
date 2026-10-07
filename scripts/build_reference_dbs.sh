@@ -4,8 +4,8 @@
 # Usage:  bash build_reference_dbs.sh OUT_DIR [arm ...]
 #   with no arm names, builds all eight public arms, cheapest first, ending with
 #   `uspto` - a ~3.4 GB download that unpacks to ~9.3 GB, then a ~25 min build.
-#   Budget a couple of hours and ~15 GB of free space for a full run, or skip
-#   the patent arm with
+#   Budget a couple of hours and ~60 GB of free space for a full indexed run
+#   (~15 GB with SKIP_INDEX=1), or skip the patent arm with
 #     SKIP_USPTO=1 bash build_reference_dbs.sh OUT_DIR
 #   which leaves a ~1.7 GB set that covers everything but patents.
 #
@@ -17,10 +17,10 @@
 #   export PRESCREEN_DB_ROOT=OUT_DIR
 #
 # Each arm lands in OUT_DIR/<arm>/<arm> as an MMseqs2 target database, which is
-# the layout prescreen.refdb.resolve() expects. No `createindex` is run: the
-# index triples the on-disk size and is a local speed optimisation, not part of
-# the shipped reference set. Add it per deployment with
-#   mmseqs createindex OUT_DIR/<arm>/<arm> tmp --split-memory-limit 2G
+# the layout prescreen.refdb.resolve() expects. Every arm is also indexed with
+# `mmseqs createindex`, which roughly halves query time but costs a lot of disk -
+# about 860 MB of fixed overhead per arm plus ~2x the database itself, so the
+# full set is ~25 GB indexed against ~4.6 GB without. SKIP_INDEX=1 turns it off.
 set -euo pipefail
 
 OUT=${1:?usage: build_reference_dbs.sh OUT_DIR [arm ...]}; shift || true
@@ -134,6 +134,19 @@ PY
       "$OUT/.src/tmp_probe" --max-seqs 10 -e 1e-3 --split-memory-limit 2G >/dev/null
   log "$arm: searchable"
   rm -rf "$OUT/.src/tmp_probe"
+
+  # Indexing is the difference between the patent arm answering in seconds and in
+  # minutes. Default -s 7.5 matches the standard search profile the prescreen uses;
+  # queries under 50 aa take a different parameter set (-k 6, unspaced k-mers) that
+  # no single index can serve, so MMseqs2 warns and falls back for those - correctly,
+  # and that warning is expected rather than a problem.
+  if [ -z "${SKIP_INDEX:-}" ]; then
+    log "$arm: indexing (SKIP_INDEX=1 to skip; costs disk, roughly halves query time)"
+    $MMSEQS createindex "$d/$arm" "$OUT/.src/tmp_idx_$arm" \
+        --split-memory-limit "${INDEX_MEMORY:-2G}" >/dev/null
+    rm -rf "$OUT/.src/tmp_idx_$arm"
+    log "$arm: indexed ($(du -sh "$d" | cut -f1) on disk)"
+  fi
 }
 
 built=() skipped=() failed=()
@@ -143,6 +156,16 @@ for arm in "${ARMS[@]}"; do
   # `createdb` leaves both of these; their presence is what resolve() looks for
   if [ -z "${FORCE:-}" ] && [ -f "$d/$arm.dbtype" ] && [ -f "$d/$arm.index" ]; then
     log "$arm: already built ($(wc -l < "$d/$arm.index") entries) - skipping, FORCE=1 to rebuild"
+    # An arm built before indexing was turned on, or by an interrupted run, still
+    # needs its index; "already built" must not mean "already indexed".
+    if [ -z "${SKIP_INDEX:-}" ] && ! compgen -G "$d/$arm.idx*" >/dev/null; then
+      log "$arm: built but not indexed - indexing now"
+      $MMSEQS createindex "$d/$arm" "$OUT/.src/tmp_idx_$arm" \
+          --split-memory-limit "${INDEX_MEMORY:-2G}" >/dev/null \
+        && log "$arm: indexed ($(du -sh "$d" | cut -f1) on disk)" \
+        || log "$arm: indexing FAILED - the database is still usable, just slower"
+      rm -rf "$OUT/.src/tmp_idx_$arm"
+    fi
     skipped+=("$arm"); continue
   fi
   mkdir -p "$d"

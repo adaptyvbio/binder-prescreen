@@ -54,8 +54,11 @@ bash scripts/build_reference_dbs.sh ~/prescreen-dbs thpdb pdb        # or name t
 export PRESCREEN_DB_ROOT=~/prescreen-dbs
 ```
 
-No credentials for any arm. Everything except `uspto` is ~1.7 GB and a couple of minutes on
-a fast connection; `uspto` is the expensive one. An arm that is already built is skipped, so
+No credentials for any arm. Everything except `uspto` is ~1.7 GB of database and a couple of
+minutes on a fast connection; `uspto` is the expensive one. Arms are also indexed by
+default: that is a 6x speedup on the patent arm (4m19s to 43s for one query) and about 2x
+elsewhere, but it takes the full set from 4.6 GB to **55 GB** on disk. Pass `SKIP_INDEX=1`
+if space is tight and slower searches are acceptable. An arm that is already built is skipped, so
 an interrupted run resumes — `FORCE=1` rebuilds. Each arm is verified by a real search
 before the script calls it done.
 
