@@ -184,14 +184,25 @@ def _relabel(row: dict, sid: str, chain: int, domain: int = 1) -> dict:
     return row
 
 
-def merge_whole(per_chain: dict, index: ChainIndex) -> dict:
+def merge_whole(
+    per_chain: dict,
+    index: ChainIndex,
+    identity_cut: float = 0.0,
+    coverage_cut: float = 0.0,
+) -> dict:
     """Collapse ``search_whole``'s ``{query_id: row}`` to one row per submission.
 
-    The best row by composite wins outright; its ``fident`` and ``qcov`` are the ones
-    ``flags.evaluate`` will read. They are never recombined across chains — taking the best
-    identity from one chain and the best coverage from another would manufacture a
-    known-binder verdict out of evidence that exists in no single alignment.
+    One row wins outright; its ``fident`` and ``qcov`` are the ones ``flags.evaluate``
+    will read. They are never recombined across chains — taking the best identity from
+    one chain and the best coverage from another would manufacture a known-binder verdict
+    out of evidence that exists in no single alignment.
+
+    Which row wins is decided by :func:`prescreen.target.known_binder_rank`, the same key
+    the per-chain search uses, so a chain whose hit clears both known-binder cuts is not
+    displaced by one with a higher composite that clears neither.
     """
+    from .target import known_binder_rank
+
     best: dict = {}
     for sid, qids in index.by_submission.items():
         chosen = None
@@ -202,7 +213,9 @@ def merge_whole(per_chain: dict, index: ChainIndex) -> dict:
             row = _relabel(dict(row), sid, index.chain_of(qid), index.domain_of(qid))
             # Strict ``>`` while walking chains in order, so a tie goes to the lowest
             # chain number — the heavy chain under the template's convention.
-            if chosen is None or row["similarity_check"] > chosen["similarity_check"]:
+            if chosen is None or known_binder_rank(
+                row, identity_cut, coverage_cut
+            ) > known_binder_rank(chosen, identity_cut, coverage_cut):
                 chosen = row
         if chosen is not None:
             best[sid] = chosen

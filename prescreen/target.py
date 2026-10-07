@@ -38,6 +38,31 @@ from .regions import FOCUS, extract, focus_region, identity_fn_for
 MIN_SUBSTRING = 8
 
 
+def known_binder_rank(row: dict, identity_cut: float, coverage_cut: float) -> tuple:
+    """Sort key that picks the hit the known-binder rule is actually tested on.
+
+    ``flags.evaluate`` calls a submission a known binder on a conjunction —
+    ``fident >= tnf_known_identity`` AND ``qcov >= tnf_known_coverage`` — but the hit it
+    reads was, until this key existed, chosen by ``argmax(fident * qcov)``. Those are
+    different orderings: a hit at 0.92/0.85 (composite 0.78) loses to one at 0.85/0.95
+    (composite 0.81), and the survivor fails the identity cut, so a real known binder goes
+    unflagged on evidence that was never the strongest under the rule.
+
+    Preferring a hit that clears both cuts, and breaking ties on the composite, makes the
+    selection agree with the rule. With both cuts at 0.0 every row clears and the key
+    degenerates to the plain composite ordering.
+
+    The cost of this choice: when a rule-clearing hit has a lower composite than some
+    other alignment, the reported ``target_similarity`` / ``target_hit`` is that
+    rule-clearing hit rather than the single strongest alignment.
+    """
+    clears = (
+        float(row.get("fident") or 0.0) >= identity_cut
+        and float(row.get("qcov") or 0.0) >= coverage_cut
+    )
+    return (clears, float(row.get("similarity_check") or 0.0))
+
+
 def _checksum(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
@@ -239,6 +264,8 @@ class TargetReference:
         settings: dict | None = None,
         mmseqs_bin: str = "mmseqs",
         threads: int = 0,
+        identity_cut: float = 0.0,
+        coverage_cut: float = 0.0,
     ) -> dict:
         """Best whole-sequence hit per query against the reference FASTA.
 
@@ -290,7 +317,9 @@ class TargetReference:
                     or row["reference_class"] in self.cdrs.covered_classes
                 )
                 prev = best.get(row["query"])
-                if prev is None or row["similarity_check"] > prev["similarity_check"]:
+                if prev is None or known_binder_rank(
+                    row, identity_cut, coverage_cut
+                ) > known_binder_rank(prev, identity_cut, coverage_cut):
                     best[row["query"]] = row
         return best
 

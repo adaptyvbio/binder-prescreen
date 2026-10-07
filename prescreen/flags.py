@@ -152,16 +152,26 @@ def evaluate(record: dict, cfg: Config) -> dict:
     if region_aware:
         # Requiring the region to corroborate is right when the region arm had a fair
         # chance to. It did not when the matched reference's class contributes no CDRs to
-        # the index at all — vnar, other and designed_other contribute none — so a
-        # byte-identical resubmission of such a binder scored 0.0-0.4 on the region and
-        # could not be called a known binder. That is the arm having nothing to say, not
-        # evidence of a new paratope.
+        # the paratope index, so a byte-identical resubmission of such a binder scores low
+        # on the region arm and could not be called a known binder. That is the arm having
+        # nothing to say, not evidence of a new paratope.
+        #
+        # The waiver is scoped to antibody formats because they are the only ones the CDR
+        # index serves. An affibody, monobody or DARPin is compared by projected paratope
+        # against same-class references (the scaffold branch of
+        # ``TargetReference.compare_region``), which never consults that index — its
+        # classes are absent from it by construction, not by a gap in curation. Waiving
+        # the paratope requirement for them would flag a legitimately reused scaffold
+        # carrying a new binding surface on whole-sequence similarity alone, which is the
+        # one thing this rule exists to prevent.
         #
         # Deliberately NOT an identity cut: a framework-reuse chimera swaps one CDR3, which
         # in a 432-aa Fab still leaves 97% identity, so any fixed identity threshold high
         # enough to mean "verbatim" for a nanobody flags legitimate reuse in a Fab.
-        uncorroborable = whole is not None and not whole.get(
-            "region_reference_available", True
+        uncorroborable = (
+            region_kind == "antibody_cdrs"
+            and whole is not None
+            and not whole.get("region_reference_available", True)
         )
         known_binder = (
             whole_fident >= cfg.tnf_known_identity
@@ -224,36 +234,50 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # computed there is no finding to suppress with, so the flag stands and the evidence
     # records that it is unverified — a verbatim copy of a published binder whose CDRs
     # happened not to extract must not be reported as a pass.
-    paratope_known = (
-        (not region_aware)
-        or not pa_region_verified
-        or pa_region_id >= cfg.prior_art_region_known
-    )
+    # ...and only when it was examined on the HIT BEING JUDGED. ``pa_region`` is one
+    # number: the best region identity over the top prior-art hits, which are the best
+    # hit per arm. ``best`` and ``best_design`` are frequently different molecules, and
+    # the design hit often is not among the top hits at all, so a single shared number
+    # would let an unrelated arm's paratope decide this hit's verdict in both directions
+    # — promoting a design whose own paratope differs, or excusing one whose paratope was
+    # never looked at. When the region evidence describes a different molecule it says
+    # nothing about this one, so it cannot suppress: the flag stands and the evidence
+    # records that the paratope went unverified.
+    def paratope_known(hit: dict | None) -> tuple[bool, bool]:
+        """``(suppressible, verified_on_this_hit)`` for one prior-art hit."""
+        if not region_aware or not pa_region_verified:
+            return True, False
+        if pa_region.get("hit") != (hit or {}).get("target"):
+            return True, False
+        return pa_region_id >= cfg.prior_art_region_known, True
+
     if design_sim >= cfg.known_sequence:
+        known, verified = paratope_known(best_design)
         evidence = {
             "reference": best_design["target"],
             "db": best_design["db"],
             "similarity_check": round(design_sim, 4),
-            "region_identity": round(pa_region_id, 4) if pa_region_verified else None,
-            "paratope_verified": pa_region_verified if region_aware else None,
+            "region_identity": round(pa_region_id, 4) if verified else None,
+            "paratope_verified": verified if region_aware else None,
         }
-        if paratope_known:
+        if known:
             flags.append("existing_design")
             reasons["existing_design"] = evidence
         else:
             context["design_framework_reused"] = evidence
     if pa_sim >= cfg.known_sequence:
+        known, verified = paratope_known(best)
         evidence = {
             "reference": best["target"],
             "db": best["db"],
             "identity": round(best["fident"], 4),
             "query_coverage": round(best["qcov"], 4),
             "similarity_check": round(pa_sim, 4),
-            "region_identity": round(pa_region_id, 4) if pa_region_verified else None,
-            "paratope_verified": pa_region_verified if region_aware else None,
+            "region_identity": round(pa_region_id, 4) if verified else None,
+            "paratope_verified": verified if region_aware else None,
             "region_hit": pa_region.get("hit"),
         }
-        if paratope_known:
+        if known:
             flags.append("known_sequence")
             reasons["known_sequence"] = evidence
         else:

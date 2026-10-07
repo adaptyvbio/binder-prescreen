@@ -27,7 +27,14 @@ def cluster_batch(records: dict, cfg: Config, workdir: str | Path) -> dict:
     }
     if len(records) < 2:
         return out
-    fasta = mmseqs.write_fasta(records, workdir / "batch.fasta")
+    # Synthetic ids, for the reason :mod:`prescreen.chains` gives for the search arms:
+    # MMseqs2 keys a FASTA accession on the first whitespace token, so a submission named
+    # "my fab v2" comes back from easy-cluster as "my", matches no key below, and is
+    # silently reported as a singleton — while "my fab v3" collides with it on the same
+    # truncated header. An opaque id cannot collide with anything the submitter typed.
+    safe = {f"b{i}": seq for i, seq in enumerate(records.values())}
+    owner = dict(zip(safe, records))
+    fasta = mmseqs.write_fasta(safe, workdir / "batch.fasta")
     tsv = mmseqs.easy_cluster(
         fasta,
         workdir / "batch_clu",
@@ -46,10 +53,13 @@ def cluster_batch(records: dict, cfg: Config, workdir: str | Path) -> dict:
             rep, member = parts
             members.setdefault(rep, []).append(member)
     for rep, group in members.items():
+        # Back to submission ids before anything leaves this function.
+        rep_id = owner.get(rep, rep)
         for member in group:
-            if member in out:
-                out[member] = {
-                    "cluster_representative": rep,
+            member_id = owner.get(member, member)
+            if member_id in out:
+                out[member_id] = {
+                    "cluster_representative": rep_id,
                     "cluster_size": len(group),
                 }
     return out

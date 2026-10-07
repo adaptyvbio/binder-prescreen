@@ -174,7 +174,16 @@ def screen(
     records = index.concat
     chain_counts = {k: len(v) for k, v in index.by_submission.items()}
     if not records:
-        return {"results": {}, "timing": {}, "config": cfg.as_dict(), "target": {}}
+        # ``dropped`` even here: a batch whose every row cleaned to nothing must still say
+        # so, or the CLI's warning is skipped and the run reports "screened 0 sequences"
+        # as if the input had been empty to begin with.
+        return {
+            "results": {},
+            "dropped": index.dropped,
+            "timing": {},
+            "config": cfg.as_dict(),
+            "target": {},
+        }
 
     tmp_holder = None
     if workdir is None:
@@ -219,8 +228,12 @@ def screen(
             workdir / "target",
             mmseqs_bin=cfg.mmseqs_bin,
             threads=cfg.threads,
+            identity_cut=cfg.tnf_known_identity,
+            coverage_cut=cfg.tnf_known_coverage,
         ),
         index,
+        identity_cut=cfg.tnf_known_identity,
+        coverage_cut=cfg.tnf_known_coverage,
     )
     timing["target_whole"] = round(time.time() - t, 2)
 
