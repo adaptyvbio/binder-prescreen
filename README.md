@@ -133,8 +133,12 @@ my-fab,EVQLVESGGG...VTVSS:DIQMTQSP...KVEIK,fab_kappa
   (median 108 aa) and a concatenated query dilutes coverage by the fraction of the molecule
   that is not the matching chain — a verbatim adalimumab Fab queried as one 432-aa string
   scores `qcov = 0.51` against its own heavy chain, under every threshold that matters.
-  Results are aggregated back to one row per submission; `prior_art_chain`, `design_chain`
-  and `target_chain` say which input chain produced each hit.
+  A chain that carries more than one variable domain — a bivalent or trivalent VHH, a
+  dual-variable heavy chain, an scFv or a Fab written as one string — is split again into
+  those domains, so a known binder sitting next to another domain is still found. Results
+  are aggregated back to one row per submission; `prior_art_chain` / `target_chain` and
+  `prior_art_domain` / `target_domain` say which input chain and which domain produced
+  each hit.
 - `molecule_class` — optional, and **cross-checked, never trusted**: the classifier still
   decides which region is compared, and a disagreement is reported as
   `declared_class_match=mismatch` instead of changing the comparison. A declaration the

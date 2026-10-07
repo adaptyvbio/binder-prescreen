@@ -19,13 +19,22 @@ paratope against the same epitope passes by design.
 
 For each submission, in order (`prescreen.screen`):
 
-0. **Split the chains** (`chains.py`) — a multi-chain submission joins its chains with `:`.
-   Steps 1-2 and 5 read the chains **concatenated**, so a paired H+L types as a Fab; steps
-   3-4 search **per chain**, because every reference is a single chain and a concatenated
-   query dilutes `qcov` by the fraction of the molecule that is not the matching chain
-   (a verbatim Fab scores 0.51 against its own heavy chain, under every cut in §5). Hits
-   are aggregated back to one record per submission, each carrying the input chain that
-   found it.
+0. **Split into search units** (`chains.py`) — a multi-chain submission joins its chains
+   with `:`, and a chain carrying two or more variable domains is split again into those
+   domains. Steps 1-2 and 5 read the whole submission **concatenated**, so a paired H+L
+   types as a Fab; steps 3-4 work **per unit**, because every reference is one domain-sized
+   chain and a concatenated query dilutes `qcov` by the fraction of the molecule that is not
+   the matching part (a verbatim Fab scores 0.51 against its own heavy chain, under every
+   cut in §5). Domains are found by recursing `variable_domain_spans` over the segments it
+   has not covered — the library's own `split_variable_domains` is keyed by chain type and
+   so caps at two, which loses the third domain of a trivalent VHH — and are kept only if
+   they clear `ANTIBODY_GERMLINE_FLOOR`, which drops constant domains numbered as variable
+   ones. A chain with fewer than two surviving domains is left whole. Hits are aggregated
+   back to one record per submission, each carrying the chain and domain that found it.
+
+   In the curated set, 151 of 4,964 references are genuinely multi-domain: 108 dual-variable
+   heavy chains, 19 dual-variable light chains and 24 multivalent VHHs, ozoralizumab among
+   them.
 
 1. **Classify** (`classify.py`) — molecule category from sequence: antibody formats
    (Fv / scFv / Fab / IgG / nanobody / VH-domain) via antpack IMGT numbering; alternative

@@ -110,6 +110,9 @@ def _annotate(
             if len(parts) < 2
             else [extract(c, cl.category, cl.region_kind) for c in parts]
         )
+        # ``parts`` are the units actually searched — the submitted chains, each already
+        # broken into its variable domains where it had more than one. Comparing the same
+        # units keeps the two arms talking about the same thing.
         out[qid] = {
             "category": cl.category,
             "region_kind": cl.region_kind,
@@ -207,7 +210,7 @@ def screen(
     # truncate into a key that matches nothing.
     query_fasta = mmseqs.write_fasta(index.queries, workdir / "queries.fasta")
     (workdir / "query_map.tsv").write_text(
-        "query_id\tsubmission_id\tchain\tlength\n"
+        "query_id\tsubmission_id\tchain\tdomain\tlength\n"
         + "".join("\t".join(str(c) for c in r) + "\n" for r in index.map_rows())
     )
     target_whole = merge_whole(
@@ -369,9 +372,11 @@ def to_rows(screened: dict) -> list:
                 # letter (H/L/S/W) within a single numbered domain.
                 "chain_lengths": ";".join(str(n) for n in rec.get("chain_lengths") or []),
                 "prior_art_chain": pa_best.get("chain"),
+                "prior_art_domain": pa_best.get("domain"),
                 "design_chain": pa_design.get("chain"),
                 "prior_art_region_chain": pa_region.get("chain"),
                 "target_chain": whole.get("chain"),
+                "target_domain": whole.get("domain"),
                 "target_region_chain": region.get("region_chain"),
             }
         )

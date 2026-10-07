@@ -86,7 +86,9 @@ template](https://proteinbase.com/templates/competition-submission-template.csv)
 `name,sequence,molecule_class`. Chains of a multi-chain entry are joined by `:`: they are
 concatenated (no linker) for classification, so a Fab types as a Fab, and searched **per
 chain**, because the references are per-chain and a concatenated query would never reach
-the coverage thresholds. `prior_art_chain` / `target_chain` name the input chain that hit. `molecule_class` is cross-checked against the
+the coverage thresholds. A chain holding several variable domains (a multivalent VHH, a
+dual-variable heavy chain, an scFv) is split into those domains first.
+`prior_art_chain` / `target_chain` and `*_domain` name what produced each hit. `molecule_class` is cross-checked against the
 classifier and reported as `declared_class_match`; it never decides which region is
 compared. Duplicate names are rejected. See `examples/submissions.csv`.
 

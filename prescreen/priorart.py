@@ -154,7 +154,7 @@ def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
             "arms_missing": [],
         }
         for qid in qids:
-            chain = index.chain_of(qid)
+            chain, domain = index.chain_of(qid), index.domain_of(qid)
             part = per_chain.get(qid)
             if part is None:
                 continue
@@ -162,11 +162,11 @@ def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
             slot["arms_searched"] = part.get("arms_searched", [])
             slot["arms_missing"] = part.get("arms_missing", [])
             for row in part.get("top") or []:
-                _relabel(row, sid, chain)
+                _relabel(row, sid, chain, domain)
             for key in ("best", "best_design"):
                 row = part.get(key)
                 if row is not None:
-                    _relabel(row, sid, chain)
+                    _relabel(row, sid, chain, domain)
                 # Strict ``>``: walking chains in order, a tie goes to the lowest chain
                 # number, which the template's convention makes the heavy chain.
                 if row is not None and (
@@ -175,12 +175,13 @@ def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
                 ):
                     slot[key] = row
             for arm, row in (part.get("per_db") or {}).items():
-                _relabel(row, sid, chain)
+                _relabel(row, sid, chain, domain)
                 prev = slot["per_db"].get(arm)
                 if prev is None or row["similarity_check"] > prev["similarity_check"]:
                     slot["per_db"][arm] = row
             slot["top"].extend(part.get("top") or [])
-            slot["per_chain"][chain] = {
+            # String key: report.json is plain json.dumps, which cannot take a tuple key.
+            slot["per_chain"][f"{chain}.{domain}"] = {
                 "best": part.get("best"),
                 "best_design": part.get("best_design"),
                 "n_hits": len(part.get("top") or []),
@@ -277,13 +278,24 @@ def region_identity_vs_hits(
         if not tseq or len(tseq) < len(q_focus):
             continue
         if tseq in cache:
-            hit_regions = cache[tseq]
+            hit_foci = cache[tseq]
         else:
-            hit_regions = extract(tseq, category, region_kind)
-            cache[tseq] = hit_regions
-        _hc, h_focus = focus_region(hit_regions)
-        if not h_focus:
+            # The hit misassigns its own chains exactly as a query would: a bivalent
+            # reference numbered as one string files its second domain under L. Compare
+            # against each of the hit's variable domains, so a multivalent reference is
+            # not reduced to whichever domain antpack happened to label H.
+            from .chains import variable_domains
+
+            units = variable_domains(tseq) or [tseq]
+            hit_foci = []
+            for unit in units:
+                _hc, h_focus = focus_region(extract(unit, category, region_kind))
+                if h_focus:
+                    hit_foci.append(h_focus)
+            cache[tseq] = hit_foci
+        if not hit_foci:
             continue
+        h_focus = max(hit_foci, key=lambda f: float(identity(q_focus, f)))
         value = float(identity(q_focus, h_focus))
         compared = True
         if value > (best["region_identity"] or 0.0):

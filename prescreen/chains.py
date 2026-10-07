@@ -28,6 +28,82 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .compat import proteintyper
+
+#: A V domain is 110-130 residues. A leftover segment shorter than this cannot hold one, so
+#: the search for further domains stops rather than numbering noise.
+MIN_DOMAIN_SEGMENT = 80
+
+
+def _germline_identity(seq: str) -> float:
+    """Best germline percent identity over the chains antpack numbers in ``seq``."""
+    cdr_novelty = proteintyper("cdr_novelty")
+    try:
+        chains = cdr_novelty.extract_cdrs(seq, molecule_type="auto")
+    except Exception:
+        return 0.0
+    pids = [float(c.get("percent_identity") or 0.0) for c in chains.values()]
+    return max(pids) if pids else 0.0
+
+
+def _spans_in(seq: str, lo: int, hi: int, out: list) -> None:
+    """Collect V-domain spans in ``seq[lo:hi]``, then recurse into what they did not cover.
+
+    ``variable_domain_spans`` returns a dict keyed by canonical chain, so it holds at most
+    one span per chain type and cannot report more than two domains however many are
+    present: on a trivalent VHH it returns two and drops the third. Re-running it on the
+    uncovered segments recovers the rest without adding any numbering code of our own.
+    """
+    if hi - lo < MIN_DOMAIN_SEGMENT:
+        return
+    cdr_novelty = proteintyper("cdr_novelty")
+    try:
+        spans = cdr_novelty.variable_domain_spans(seq[lo:hi])
+    except Exception:
+        return
+    ordered = sorted(spans.values())
+    if not ordered:
+        return
+    # Same guard the library applies: overlapping spans mean the numbering placed two
+    # domains on the same residues, so this segment cannot be trusted.
+    for (_, prev_end), (next_start, _) in zip(ordered, ordered[1:]):
+        if next_start <= prev_end:
+            return
+    bounds = []
+    for start, end in ordered:
+        a, b = lo + start - 1, lo + end
+        out.append((a, b))
+        bounds.append((a, b))
+    # The gaps before, between and after what was just found.
+    edges = [lo] + [x for ab in bounds for x in ab] + [hi]
+    for g_lo, g_hi in zip(edges[0::2], edges[1::2]):
+        if g_hi - g_lo >= MIN_DOMAIN_SEGMENT:
+            _spans_in(seq, g_lo, g_hi, out)
+
+
+def variable_domains(seq: str, floor: float | None = None) -> list:
+    """The variable domains of ``seq``, N- to C-terminal, or ``[]`` if fewer than two.
+
+    Returning ``[]`` for a single-domain input is the contract the callers rely on: a
+    nanobody, a lone VH, an IgG heavy chain whose only real V domain is its VH, a peptide
+    and a non-antibody are all left to be handled whole, exactly as before.
+
+    Candidate domains are filtered by germline identity. antpack numbers a constant domain
+    as readily as a variable one — 41 of 149 ``igg_chain_heavy`` references in the curated
+    set split into a real VH plus a CH domain at ~0.35 identity — so a domain counts only
+    if it clears the same floor the classifier uses to decide an antibody is an antibody.
+    Genuine dual-variable heavy chains and bivalent VHHs sit at 0.92-0.98 and survive.
+    """
+    from .classify import ANTIBODY_GERMLINE_FLOOR
+
+    floor = ANTIBODY_GERMLINE_FLOOR if floor is None else floor
+    found: list = []
+    _spans_in(seq, 0, len(seq), found)
+    if len(found) < 2:
+        return []
+    kept = [seq[a:b] for a, b in sorted(found) if _germline_identity(seq[a:b]) >= floor]
+    return kept if len(kept) >= 2 else []
+
 
 @dataclass
 class ChainIndex:
@@ -37,7 +113,8 @@ class ChainIndex:
     concat: dict = field(default_factory=dict)
     #: ``{query_id: one_chain}`` — what the MMseqs2 arms see.
     queries: dict = field(default_factory=dict)
-    #: ``{query_id: (submission_id, chain_number)}``, chain numbers 1-based.
+    #: ``{query_id: (submission_id, chain_number, domain_number)}``, both 1-based. The
+    #: domain number is 1 for a chain that was searched whole.
     owner: dict = field(default_factory=dict)
     #: ``{submission_id: [query_id, ...]}`` in chain order.
     by_submission: dict = field(default_factory=dict)
@@ -49,14 +126,17 @@ class ChainIndex:
     def chain_of(self, query_id: str) -> int:
         return self.owner[query_id][1]
 
+    def domain_of(self, query_id: str) -> int:
+        return self.owner[query_id][2]
+
     def submission_of(self, query_id: str) -> str:
         return self.owner[query_id][0]
 
     def map_rows(self) -> list:
         """Rows for ``query_map.tsv``: the synthetic id, and what it stands for."""
         return [
-            (qid, sid, chain, len(self.queries[qid]))
-            for qid, (sid, chain) in self.owner.items()
+            (qid, sid, chain, domain, len(self.queries[qid]))
+            for qid, (sid, chain, domain) in self.owner.items()
         ]
 
 
@@ -83,17 +163,24 @@ def split_submissions(records: dict) -> ChainIndex:
         index.by_submission[sid] = []
         index.lengths[sid] = [len(c) for c in parts]
         for k, chain in enumerate(parts, start=1):
-            qid = f"q{i}c{k}"
-            index.queries[qid] = chain
-            index.owner[qid] = (sid, k)
-            index.by_submission[sid].append(qid)
+            # A chain carrying two or more variable domains is searched and compared as
+            # those domains; one carrying fewer is left exactly as it is. The linker and
+            # any tag between domains belong to neither and are dropped, which is what
+            # stops them diluting whole-sequence coverage against single-chain references.
+            units = variable_domains(chain) or [chain]
+            for d, unit in enumerate(units, start=1):
+                qid = f"q{i}c{k}d{d}"
+                index.queries[qid] = unit
+                index.owner[qid] = (sid, k, d)
+                index.by_submission[sid].append(qid)
     return index
 
 
-def _relabel(row: dict, sid: str, chain: int) -> dict:
-    """Stamp a hit row with the submission it belongs to and the chain that found it."""
+def _relabel(row: dict, sid: str, chain: int, domain: int = 1) -> dict:
+    """Stamp a hit row with the submission, chain and domain that produced it."""
     row["query"] = sid
     row["chain"] = chain
+    row["domain"] = domain
     return row
 
 
@@ -112,7 +199,7 @@ def merge_whole(per_chain: dict, index: ChainIndex) -> dict:
             row = per_chain.get(qid)
             if row is None:
                 continue
-            row = _relabel(dict(row), sid, index.chain_of(qid))
+            row = _relabel(dict(row), sid, index.chain_of(qid), index.domain_of(qid))
             # Strict ``>`` while walking chains in order, so a tie goes to the lowest
             # chain number — the heavy chain under the template's convention.
             if chosen is None or row["similarity_check"] > chosen["similarity_check"]:
