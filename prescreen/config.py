@@ -84,7 +84,6 @@ class Config:
 
     # --- search behaviour ---
     db_root: str | None = None  # ':'-separated list of database roots
-    short_sequence_length: int = 50  # mirrors refdb.LENGTH_SPLIT
     mmseqs_bin: str = "mmseqs"
     threads: int = 0  # 0 = let mmseqs decide
     # The patent arm (10.2M sequences) costs seconds per query, but a binder claimed in a
