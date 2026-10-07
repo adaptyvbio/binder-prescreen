@@ -13,9 +13,15 @@ Labels (constructed, not assumed):
 
 Run with the curated reference set:
 
-    python calibrate.py --target data/tnfa_binders.fasta --metadata data/tnfa_binders.csv \
-        --unrelated path/to/unrelated_designs.fasta \
-        --out calibration
+    python calibrate.py \
+        --target prescreen/data/tnfa_binders.fasta \
+        --metadata prescreen/data/tnfa_binders.csv \
+        --unrelated "$PRESCREEN_DB_ROOT/proteinbase_public/proteins.fasta" \
+        --n-unrelated 80 --out calibration
+
+Note that the unrelated designs above come from the same corpus as the
+``proteinbase_public`` arm, so each one matches itself and is labelled ``existing_design``.
+That row is a self-identity check, not a false-positive rate; see PRESCREEN_SPEC.md 5.
 """
 
 from __future__ import annotations

@@ -156,8 +156,9 @@ A hit here means "already tried, did not work"
 | exact adalimumab / known VHH / affibody | `known_target_binder` | whole-sequence + paratope both match |
 | known anti-TNF CDR3 on a foreign framework | `target_region_match` | paratope matches, whole-sequence does not |
 | known framework carrying a new CDR3 | `pass` | framework reuse is allowed; paratope is new |
-| unrelated design for another target | `pass` | neither arm matches |
+| unrelated design for another target | `existing_design` | already published on Proteinbase |
 
-On the 1,036-sequence calibration set: known binders flagged 100 %, grafted known
-paratopes 94 %, reused frameworks correctly pass, unrelated/shuffled controls pass
-91–98 %.
+On the 1,026-sequence calibration set: known binders flagged 100 %, grafted known
+paratopes 97 %, reused frameworks correctly pass, shuffled controls pass 98 %. The
+unrelated designs are drawn from the published-design corpus the screen searches, so they
+all match themselves — see the note in `PRESCREEN_SPEC.md` §5.

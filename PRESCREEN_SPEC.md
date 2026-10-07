@@ -149,27 +149,40 @@ variables. Defaults:
 
 ### Calibration
 
-A labelled set of 1,036 sequences was built (`calibrate.py`) from a stratified sample of
+A labelled set of 1,026 sequences was built (`calibrate.py`) from a stratified sample of
 the curated binders: verbatim knowns, a 2–35 % random-substitution mutant series, grafts
 (a known CDR3 spliced onto a different framework of the same class), framework-reuse
 chimeras (a known framework carrying a scrambled region), published designs against other
-targets, and shuffled controls. Pass rate by class (`fig_calibration.png`,
-`calibration_table.csv`):
+targets, and shuffled controls. All eight arms were searched, the patent arm included.
+Pass rate by class (`calibration_table.csv`):
 
 | class | n | passed | reading |
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
-| mutant 2 % / 5 % | 236 | 0 % / 1.7 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 12 % / 33 % / 91 % | graded — a heavily rewritten binder is a new molecule |
-| **grafted known CDR3** | 65 | **6 %** | 94 % of grafts onto a new framework are caught — the case whole-sequence misses |
-| **reused framework** | 65 | **55 %** | correctly passed; of the rest, 38 % flag only as in-batch duplicates and 6 % as known-binder false positives |
-| unrelated design | 80 | 91 % | low false-positive rate on designs for other targets |
+| mutant 2 % / 5 % | 236 | 0 % / 0 % | lightly mutated knowns still caught |
+| mutant 10 % / 20 % / 35 % | 354 | 5 % / 18 % / 87 % | graded — a heavily rewritten binder is a new molecule |
+| **grafted known CDR3** | 60 | **3 %** | 97 % of grafts onto a new framework are caught — the case whole-sequence misses |
+| **reused framework** | 60 | **58 %** | correctly passed; of the rest, 38 % flag only as in-batch duplicates and 3 % as known-binder false positives |
+| unrelated design | 80 | 0 % | **not a usable negative** — see below |
 | shuffled control | 118 | 98 % | composition-matched negative |
 
 The binding-region arm is the separator: region identity to the nearest known binder has
-median **1.00 for grafts** (known paratope present) versus **0.40 for reused frameworks**
-and **0.29 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 86 % of
-grafts fall above it, ~5 % of framework-reuse and unrelated cases do.
+median **1.00 for grafts** (known paratope present) versus **0.39 for reused frameworks**
+and **0.27 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 93 % of
+grafts fall above it, 3 % of framework-reuse and 2 % of unrelated cases do.
+
+**The unrelated-design row measures nothing.** `calibrate.py` draws it from the published
+Proteinbase designs, which is also the `proteinbase_public` arm, so all 80 match themselves
+at identity 1.00 and flag as `existing_design`. That is the correct verdict — they *are*
+published designs — but it makes the row a self-identity check rather than a false-positive
+rate. A real false-positive estimate needs the sampled designs held out of the design arm,
+or a negative set drawn from a corpus that is not searched. Until then, the shuffled control
+is the only honest negative in the set.
+
+Reading the mutant series against the earlier patent-free calibration: adding the USPTO arm
+roughly halves the pass rate of the 10 % and 20 % mutants (12 % → 5 %, 33 % → 18 %), which
+is the patent corpus catching rewritten binders that the structural and antibody databases
+miss. 639 of the 1,026 sequences take their best public hit from `uspto`.
 
 ### Evidence reported per flag
 

@@ -31,7 +31,7 @@ Comparing the paratope independently fixes both error directions:
 | **known CDR3**, fresh framework | looks unrelated | matches | **flagged** — a known binder in disguise |
 
 That discrimination is the whole point of the tool. Cut points, the calibration behind
-them (1,036 labelled sequences), and the deliberate blind spots are in
+them (1,026 labelled sequences), and the deliberate blind spots are in
 [`PRESCREEN_SPEC.md`](PRESCREEN_SPEC.md); [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md) is the
 plain-language walkthrough.
 
