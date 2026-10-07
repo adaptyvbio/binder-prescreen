@@ -91,6 +91,10 @@ class Config:
     # granted patent and deposited nowhere else is invisible without it, so it is searched
     # by default. The cost is amortised over the batch; set False to drop it.
     include_patent_arm: bool = True
+    # A requested arm that is not on disk reads exactly like a sequence with no prior art,
+    # so a missing arm aborts the run. Set True to screen against whatever is mounted and
+    # accept that "no prior art found" is then a weaker statement.
+    allow_missing_arms: bool = False
     target_name: str = "TNF-alpha"
     target_fasta: str | None = None
     target_metadata: str | None = None

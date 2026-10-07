@@ -110,9 +110,11 @@ the same filter works for any target, not just the one that ships.
 
 ## 5. Before reporting a clean result, check what was searched
 
-An arm whose database is not on disk is **skipped silently**. Nothing is printed, and a
-skipped arm reads exactly like a sequence with no prior art — so a "nothing found" result
-from an incomplete database root is not evidence of anything.
+A missing arm reads exactly like a sequence with no prior art, so a screen whose database
+root is incomplete **aborts** with `ReferenceDbMissing` naming the arms. If you deliberately
+want a partial screen, pass `--allow-missing-arms`: the run then warns on stderr and fills
+`prior_art_arms_missing` on every row. Never report such a run as a clean result — say which
+arms were skipped.
 
 ```bash
 uv run python -c "from prescreen import refdb; print(refdb.available())"   # before

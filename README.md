@@ -147,10 +147,12 @@ export PRESCREEN_DB_ROOT="$HOME/prescreen-dbs:/mnt/shared/sequence-dbs"
 
 ### Check what was actually searched
 
-**This is the one that bites.** An arm whose database is not on disk is *skipped
-silently* — a missing arm reads exactly like a sequence with no prior art, which is the
-answer a prescreen must never give by accident. Nothing warns you on stdout, but every run
-records the truth in `report.json`:
+A missing arm reads exactly like a sequence with no prior art, which is the answer a
+prescreen must never give by accident — so **a run whose reference databases are
+incomplete aborts** rather than screening against whatever is mounted. `--allow-missing-arms`
+overrides that when an incomplete screen is genuinely what you want; the run then warns on
+stderr, and `prior_art_arms_missing` in `report.csv` names the arms left out on every row.
+Either way, `report.json` records exactly what was searched:
 
 ```python
 import json

@@ -15,8 +15,11 @@ reference regions of *compatible* references, using the library's own region-ide
 functions. This is what catches a known anti-TNF paratope grafted onto a fresh framework:
 whole-sequence identity to the reference is low, region identity is near 1.
 
-Region extraction over the reference set is cached to JSON beside the FASTA, keyed by the
-FASTA's checksum, so a batch run pays for it once.
+Region extraction over the reference set is cached to JSON beside the FASTA, so a batch
+run pays for it once. The key is the FASTA's checksum *and* a fingerprint of the code that
+produced the annotations: the classifier is an input to the cached result, so a cache keyed
+on the FASTA alone keeps serving the old categories after the classifier changes, and the
+reference side of the comparison silently disagrees with the query side.
 """
 
 from __future__ import annotations
@@ -39,6 +42,21 @@ def _checksum(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
     return h.hexdigest()[:16]
+
+
+def _annotator_fingerprint() -> str:
+    """Fingerprint of the modules whose output ``ensure_annotations`` caches.
+
+    Hashing the source rather than a hand-maintained version number means a change to the
+    classifier cannot be forgotten: there is no bump to omit. A comment-only edit
+    invalidates the cache too, which costs a few seconds of re-annotation — far cheaper
+    than comparing a query annotated by the new classifier against references annotated
+    by the old one.
+    """
+    h = hashlib.sha256()
+    for mod in ("classify.py", "regions.py"):
+        h.update((Path(__file__).parent / mod).read_bytes())
+    return h.hexdigest()[:8]
 
 
 @dataclass
@@ -115,7 +133,9 @@ class TargetReference:
         self.cache_path = (
             Path(cache_path)
             if cache_path
-            else self.fasta.with_suffix(f".regions.{self.checksum}.json")
+            else self.fasta.with_suffix(
+                f".regions.{self.checksum}.{_annotator_fingerprint()}.json"
+            )
         )
         self.annotations: dict = {}
 

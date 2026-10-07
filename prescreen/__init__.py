@@ -35,7 +35,7 @@ from pathlib import Path
 
 from . import cluster as _cluster
 from . import flags as _flags
-from . import mmseqs, priorart
+from . import mmseqs, priorart, refdb
 from .classify import classify, compare_declared
 from .config import Config, resolve_db_root
 from .regions import extract, focus_region
@@ -174,6 +174,14 @@ def screen(
     timing["target_substring"] = round(time.time() - t, 2)
 
     prior = {}
+    if not skip_prior_art and not cfg.db_root and not cfg.allow_missing_arms:
+        # Falling through here would run the target arm alone and report every submission
+        # as having no prior art, which is indistinguishable from a real clean result.
+        raise refdb.ReferenceDbMissing(
+            "no reference database root found: set PRESCREEN_DB_ROOT (or pass --db-root) "
+            "to the directory built by scripts/build_reference_dbs.sh, or run with "
+            "--skip-prior-art to screen against the target set alone."
+        )
     if not skip_prior_art and cfg.db_root:
         t = time.time()
         prior = priorart.search(records, cfg, workdir / "priorart")
@@ -269,7 +277,10 @@ def to_rows(screened: dict) -> list:
                 "prior_art_similarity": round(pa_best.get("similarity_check", 0.0), 4),
                 "prior_art_db": pa_best.get("db"),
                 "prior_art_hit": pa_best.get("target"),
-                "prior_art_region_identity": pa_region.get("region_identity", 0.0),
+                "prior_art_region_identity": pa_region.get("region_identity"),
+                "prior_art_arms_missing": ";".join(
+                    rec["prior_art"].get("arms_missing") or []
+                ),
                 "prior_art_region_hit": pa_region.get("hit"),
                 "design_similarity": round(pa_design.get("similarity_check", 0.0), 4),
                 "design_hit": pa_design.get("target"),

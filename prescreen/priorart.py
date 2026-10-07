@@ -71,6 +71,17 @@ def search(
     present = refdb.available(roots)
     searched = [a for a in arms if present.get(a)]
     missing = [a for a in arms if not present.get(a)]
+    # refdb.search_fasta raises for an arm it cannot resolve, but it is only ever handed
+    # the arms that already resolved, so the invariant this module's docstring states has
+    # to be enforced here or not at all. Silently searching seven arms when eight were
+    # asked for reports "no prior art" on evidence that was never gathered.
+    if missing and not cfg.allow_missing_arms:
+        raise refdb.ReferenceDbMissing(
+            f"reference database(s) not found for arm(s): {', '.join(missing)}. "
+            f"Build them with scripts/build_reference_dbs.sh, point PRESCREEN_DB_ROOT at "
+            f"them, or pass --allow-missing-arms to screen against the rest and accept a "
+            f"weaker 'no prior art' result."
+        )
 
     results = {
         qid: {"best": None, "best_design": None, "per_db": {}, "top": []}
@@ -145,12 +156,17 @@ def region_identity_vs_hits(
             matters because popular framework hits recur throughout a batch.
 
     Returns:
-        ``{"region_identity": float, "hit": str|None, "db": str|None,
-        "hit_region": str|None}``; identity 0.0 when nothing comparable was found.
+        ``{"region_identity": float|None, "hit": str|None, "db": str|None,
+        "hit_region": str|None}``. ``region_identity`` is ``None`` when no region could be
+        compared at all — the query's focus region would not extract, or no hit carried a
+        usable one. That is NOT the same as 0.0, which means a region WAS compared and
+        differs, and the two must not be conflated: a caller that reads "could not compute"
+        as "the paratope is new" turns a failed check into a clean bill of health for a
+        verbatim copy of a published binder.
     """
     from .regions import FOCUS, extract, focus_region, identity_fn_for
 
-    empty = {"region_identity": 0.0, "hit": None, "db": None, "hit_region": None}
+    empty = {"region_identity": None, "hit": None, "db": None, "hit_region": None}
     if region_kind == "whole":
         return empty
     _chain, q_focus = focus_region(query_regions)
@@ -159,6 +175,7 @@ def region_identity_vs_hits(
     identity = identity_fn_for(category)
     cache = cache if cache is not None else {}
     best = dict(empty)
+    compared = False
     for hit in hits:
         tseq = (hit.get("tseq") or "").strip().upper()
         if not tseq or len(tseq) < len(q_focus):
@@ -172,11 +189,16 @@ def region_identity_vs_hits(
         if not h_focus:
             continue
         value = float(identity(q_focus, h_focus))
-        if value > best["region_identity"]:
+        compared = True
+        if value > (best["region_identity"] or 0.0):
             best = {
                 "region_identity": round(value, 4),
                 "hit": hit.get("target"),
                 "db": hit.get("db"),
                 "hit_region": h_focus,
             }
+    if compared and best["region_identity"] is None:
+        # Every comparison scored 0.0, so the loop never beat the initial None. The region
+        # WAS compared, and the answer is zero.
+        best["region_identity"] = 0.0
     return best

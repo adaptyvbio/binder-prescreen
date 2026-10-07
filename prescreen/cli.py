@@ -96,6 +96,14 @@ def _read_submissions(
     "all queries). Searched by default — without it, a binder claimed only in a patent "
     "is invisible.",
 )
+@click.option(
+    "--allow-missing-arms",
+    is_flag=True,
+    help="Screen against whatever reference databases are mounted instead of aborting. "
+    "A missing arm looks exactly like a sequence with no prior art, so 'no prior art "
+    "found' is a weaker statement under this flag; the arms left out are reported in "
+    "prior_art_arms_missing.",
+)
 @click.option("--threads", default=0, type=int, help="MMseqs2 threads (0 = auto).")
 @click.option("--id-column", default="name", help="CSV id column.")
 @click.option("--sequence-column", default="sequence", help="CSV sequence column.")
@@ -116,6 +124,7 @@ def main(
     db_root: str | None,
     skip_prior_art: bool,
     skip_patent_arm: bool,
+    allow_missing_arms: bool,
     threads: int,
     id_column: str,
     sequence_column: str,
@@ -141,6 +150,8 @@ def main(
     # Only override the config when the flag was actually given, so the env var survives.
     if skip_patent_arm:
         cfg.include_patent_arm = False
+    if allow_missing_arms:
+        cfg.allow_missing_arms = True
 
     output.mkdir(parents=True, exist_ok=True)
     screened = screen(
@@ -167,6 +178,15 @@ def main(
     for rec in screened["results"].values():
         counts[rec["verdict"]] = counts.get(rec["verdict"], 0) + 1
     click.echo(f"screened {len(records)} sequences -> {csv_path}")
+    absent = sorted(
+        {a for r in screened["results"].values() for a in (r["prior_art"].get("arms_missing") or [])}
+    )
+    if absent:
+        click.echo(
+            f"  WARNING: {len(absent)} arm(s) not searched: {', '.join(absent)}. "
+            "A 'pass' here does not mean no prior art exists.",
+            err=True,
+        )
     for flag in FLAG_ORDER:
         if flag in counts:
             click.echo(f"  {flag:28s} {counts[flag]}")

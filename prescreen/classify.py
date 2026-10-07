@@ -68,6 +68,15 @@ ANTIBODY_CATEGORIES = (
 )
 SCAFFOLD_CATEGORIES = ("affibody", "monobody", "darpin")
 
+# ``framework_identity`` normalises by the number of ALIGNED framework positions, not by
+# the reference length, so it carries no coverage term: a query that aligns to a handful
+# of positions and matches them scores 1.0. A single residue "A" reaches DARPin identity
+# 1.0 and clears the 0.85 gate. This is the same trap the prior-art arm documents for
+# ``fident`` without ``qcov`` — identity alone is meaningless without the span it covers.
+# Require the query to be a plausible length for the family before the gate can fire; a
+# sequence well under its reference simply is not that scaffold.
+SCAFFOLD_MIN_LENGTH_FRACTION = 0.6
+
 # The Proteinbase submission template carries a ``molecule_class`` the submitter declares
 # (https://proteinbase.com/templates/competition-submission-template.csv). It is a
 # cross-check, never a substitute: trusting it would let a mis-declared submission
@@ -298,19 +307,29 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
             "floor": ANTIBODY_GERMLINE_FLOOR,
         }
 
-    # 2. Alternative scaffolds, by framework identity to the canonical reference.
+    # 2. Alternative scaffolds, by framework identity to the canonical reference, but only
+    # for a query long enough to be one (see SCAFFOLD_MIN_LENGTH_FRACTION).
     fw = {
         family: round(scaffold_cdr.framework_identity(family, seq), 4)
         for family in SCAFFOLD_CATEGORIES
     }
-    best_family = max(fw, key=fw.get)
-    if fw[best_family] >= gate:
+    min_lengths = {
+        family: int(SCAFFOLD_MIN_LENGTH_FRACTION * len(scaffold_cdr.SCAFFOLD_REFS[family]))
+        for family in SCAFFOLD_CATEGORIES
+    }
+    eligible = {f: v for f, v in fw.items() if n >= min_lengths[f]}
+    best_family = max(eligible, key=eligible.get) if eligible else None
+    if best_family is not None and fw[best_family] >= gate:
         return Classification(
             category=best_family,
             region_kind="scaffold_paratope",
             confidence=fw[best_family],
             length=n,
-            evidence={"framework_identity": fw, "gate": gate},
+            evidence={
+                "framework_identity": fw,
+                "gate": gate,
+                "min_length": min_lengths,
+            },
         )
 
     # 3. Length regime.
@@ -330,6 +349,7 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
         evidence={
             "framework_identity": fw,
             "gate": gate,
+            "min_length": min_lengths,
             "antibody_numbering": (
                 "rejected"
                 if antibody_error
