@@ -29,7 +29,7 @@ Do not "upgrade" `antpack`. It is pinned to `0.3.8.6.2`; 0.4 put the numbering t
 a license key and imports a Qt GUI that fails on a headless machine. The package sets
 `KMP_AFFINITY=disabled` itself — without it MMseqs2 aborts with an OpenMP affinity error.
 
-Check the install with `prescreen --help`.
+Check the install with `uv run prescreen --help`.
 
 ## 2. Pick a mode before you run anything
 
@@ -59,17 +59,22 @@ a fast connection; `uspto` is the expensive one. An arm that is already built is
 an interrupted run resumes — `FORCE=1` rebuilds. Each arm is verified by a real search
 before the script calls it done.
 
+**If an arm fails, the script keeps going and exits non-zero.** Each arm comes from a
+different third-party host and any of them can be down. Read the summary it prints: it names
+the failed arms and gives the command to retry just those. Do not report a screen as complete
+while an arm is missing — rerun the failed arm first, or say which arms were skipped.
+
 `$PRESCREEN_DB_ROOT` takes a `:`-separated list, first match wins, so a shared mount and a
 few locally built arms can be mixed.
 
 ## 4. Run it
 
 ```bash
-prescreen submissions.fasta -o report/
-prescreen submissions.fasta --skip-prior-art -o report/
-prescreen submissions.csv --id-column id --sequence-column sequence -o report/
-prescreen submissions.fasta --patent -o report/        # + the USPTO arm, seconds per query
-prescreen submissions.fasta -o report/ --flagged-only  # drop the passes from report.csv
+uv run prescreen submissions.fasta -o report/
+uv run prescreen submissions.fasta --skip-prior-art -o report/
+uv run prescreen submissions.csv --id-column id --sequence-column sequence -o report/
+uv run prescreen submissions.fasta --patent -o report/        # + the USPTO arm, seconds per query
+uv run prescreen submissions.fasta -o report/ --flagged-only  # drop the passes from report.csv
 ```
 
 **Pass the whole batch in one call. Never loop over sequences.** The search is batched — one
@@ -99,7 +104,7 @@ skipped arm reads exactly like a sequence with no prior art — so a "nothing fo
 from an incomplete database root is not evidence of anything.
 
 ```bash
-python -c "from prescreen import refdb; print(refdb.available())"   # before
+uv run python -c "from prescreen import refdb; print(refdb.available())"   # before
 ```
 
 ```python

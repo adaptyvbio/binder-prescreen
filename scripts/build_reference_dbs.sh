@@ -38,24 +38,20 @@ export KMP_AFFINITY=disabled   # else MMseqs2 aborts with OMP error #179
 
 mkdir -p "$OUT" "$OUT/.src"
 log(){ printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
-fetch(){ curl -fSL --retry 3 -o "$2" "$1"; }
+# --connect-timeout so an unreachable host fails in half a minute instead of
+# hanging for several, which matters when it is only one of eight arms.
+fetch(){ curl -fSL --retry 3 --connect-timeout 30 -o "$2" "$1"; }
 # For the 3.4 GB patent download: resume a partial transfer rather than starting over,
 # falling back to a clean fetch if the server will not serve a range.
-fetch_big(){ curl -fSL --retry 3 -C - -o "$2" "$1" || curl -fSL --retry 3 -o "$2" "$1"; }
+fetch_big(){ curl -fSL --retry 3 --connect-timeout 30 -C - -o "$2" "$1" \
+             || curl -fSL --retry 3 --connect-timeout 30 -o "$2" "$1"; }
 
-for arm in "${ARMS[@]}"; do
-  [ -z "$arm" ] && continue
-  d="$OUT/$arm"
-  # `createdb` leaves both of these; their presence is what resolve() looks for
-  if [ -z "${FORCE:-}" ] && [ -f "$d/$arm.dbtype" ] && [ -f "$d/$arm.index" ]; then
-    log "$arm: already built ($(wc -l < "$d/$arm.index") entries) - skipping, FORCE=1 to rebuild"
-    continue
-  fi
-  mkdir -p "$d"
-  if [ "$arm" = uspto ]; then
-    log "uspto: ~3.4 GB download (~9.3 GB unpacked) + ~25 min build + ~2.6 GB of database. SKIP_USPTO=1 omits it."
-  fi
-  log "building $arm"
+# One arm per third-party host, and any of them can be down on the day. A failure
+# here is logged and the run carries on with the others rather than losing the
+# whole build; the summary at the end names what is missing and the exit status
+# is non-zero, so nothing silently pretends to be complete.
+build_arm(){
+  local arm=$1 d=$2 f n
   case "$arm" in
   pdb)
     # `mmseqs databases` records the upstream release in pdb.version. It keeps
@@ -96,7 +92,13 @@ PY
     $PYTHON "$HERE/build/therasabdab_to_fasta.py" "$f" "$d/therasabdab.fasta"
     $MMSEQS createdb "$d/therasabdab.fasta" "$d/therasabdab" ;;
   thpdb)
-    fetch https://webs.iiitd.edu.in/raghava/thpdb/sequences/allseq "$d/thpdb.fasta"
+    # The THPdb web host (webs.iiitd.edu.in) is frequently unreachable, so this takes
+    # the Figshare deposit of the same database instead. It is a 39-column TSV, not a
+    # FASTA, and multi-chain therapeutics pack every chain into one cell - see
+    # build/thpdb_to_fasta.py.
+    f="$OUT/.src/thpdb.txt"
+    fetch https://ndownloader.figshare.com/files/8868913 "$f"
+    $PYTHON "$HERE/build/thpdb_to_fasta.py" "$f" "$d/thpdb.fasta"
     $MMSEQS createdb "$d/thpdb.fasta" "$d/thpdb" ;;
   proteinbase_public)
     # The published designs, from the public API - no credentials. This is the
@@ -121,7 +123,7 @@ PY
     # shuffle buffers the whole 10.2 M-sequence corpus and OOMs a 16 GB box.
     $MMSEQS createdb "$d/uspto.fasta" "$d/uspto" --shuffle 0 --compressed 1
     rm -f "$d/uspto.fasta" ;;
-  *) log "unknown arm: $arm"; exit 2 ;;
+  *) log "unknown arm: $arm"; return 2 ;;
   esac
   n=$(wc -l < "$d/$arm.index")
   log "$arm: $n entries"
@@ -132,5 +134,49 @@ PY
       "$OUT/.src/tmp_probe" --max-seqs 10 -e 1e-3 --split-memory-limit 2G >/dev/null
   log "$arm: searchable"
   rm -rf "$OUT/.src/tmp_probe"
+}
+
+built=() skipped=() failed=()
+for arm in "${ARMS[@]}"; do
+  [ -z "$arm" ] && continue
+  d="$OUT/$arm"
+  # `createdb` leaves both of these; their presence is what resolve() looks for
+  if [ -z "${FORCE:-}" ] && [ -f "$d/$arm.dbtype" ] && [ -f "$d/$arm.index" ]; then
+    log "$arm: already built ($(wc -l < "$d/$arm.index") entries) - skipping, FORCE=1 to rebuild"
+    skipped+=("$arm"); continue
+  fi
+  mkdir -p "$d"
+  if [ "$arm" = uspto ]; then
+    log "uspto: ~3.4 GB download (~9.3 GB unpacked) + ~25 min build + ~2.6 GB of database. SKIP_USPTO=1 omits it."
+  fi
+  log "building $arm"
+  # NOT `if ( set -e; build_arm ... ); then` - bash suppresses errexit throughout a
+  # compound command used as an `if` condition, subshell and called function included,
+  # so the arm would run on past its first failed command and report success. Disable
+  # errexit around a standalone subshell and read its status instead.
+  set +e
+  ( set -e; build_arm "$arm" "$d" )
+  arm_status=$?
+  set -e
+  if [ $arm_status -eq 0 ]; then
+    built+=("$arm")
+  else
+    # Clear the two files resolve() keys on, so a half-built arm is not mistaken
+    # for a finished one on the next run. Downloads under .src are kept.
+    rm -f "$d/$arm.dbtype" "$d/$arm.index"
+    log "$arm: FAILED (upstream unreachable, or the build errored) - continuing"
+    failed+=("$arm")
+  fi
 done
+
+[ ${#built[@]}   -gt 0 ] && log "built:   ${built[*]}"
+[ ${#skipped[@]} -gt 0 ] && log "skipped: ${skipped[*]} (already present)"
+if [ ${#failed[@]} -gt 0 ]; then
+  log "FAILED:  ${failed[*]}"
+  log "Retry just those with: bash $0 $OUT ${failed[*]}"
+  log "Until then the prescreen will report them under prior_art.arms_missing,"
+  log "and a 'no prior art' verdict is weaker than it looks."
+  log "set PRESCREEN_DB_ROOT=$OUT"
+  exit 1
+fi
 log "done; set PRESCREEN_DB_ROOT=$OUT"

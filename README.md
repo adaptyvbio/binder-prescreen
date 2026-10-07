@@ -58,7 +58,7 @@ whole-sequence against the curated binder set, the paratope comparison, and the 
 fragment check. The reference set is inside the package, so this needs **no downloads**.
 
 ```bash
-prescreen examples/submissions.fasta --skip-prior-art -o report/
+uv run prescreen examples/submissions.fasta --skip-prior-art -o report/
 ```
 
 ```
@@ -86,30 +86,48 @@ arm**. Each arm lands at `<root>/<arm>/<arm>` as an MMseqs2 database, which is t
 built is skipped (so an interrupted run resumes, and `FORCE=1` rebuilds), and the 3.4 GB
 patent download resumes rather than restarting.
 
-Counts and sizes from a build on 2026-10-07 (the `uspto` row from an earlier build of the
-same source); the upstream sources move, so treat them as the order of magnitude rather
-than a contract.
+Each arm comes from a different third-party host, and any of them can be down on the day.
+A failed arm is logged and the run carries on with the rest; the summary at the end names
+what is missing, prints the command to retry just those arms, and exits non-zero. Nothing
+is left half-built: an arm that failed does not look finished to the next run.
+
+Counts and sizes measured on a build from scratch on 2026-10-07; the upstream sources move,
+so treat them as the order of magnitude rather than a contract.
 
 | arm | entries | on disk | source |
 |---|---|---|---|
-| `thpdb` | 239 | 188 KB | THPdb therapeutic proteins |
+| `thpdb` | 162 | 112 KB | THPdb FDA-approved therapeutics (Figshare) |
 | `therasabdab` | 2,533 | 884 KB | Thera-SAbDab therapeutic antibody chains |
 | `plabdab_nano` | 2,306 | 724 KB | PLAbDab-nano VHH / VNAR / sdAb |
 | `proteinbase_public` | 3,253 | 1.2 MB | published Proteinbase designs (public API) |
 | `plabdab` | 350,350 | 168 MB | PLAbDab paired antibodies |
 | `pdb` | 1,172,061 | 457 MB | PDB seqres chains |
 | `swissprot` | 575,748 | 1.1 GB | UniProtKB/Swiss-Prot |
-| `uspto` | 10,206,785 | ~2.6 GB | USPTO patent sequences |
+| `uspto` | 11,173,221 | 2.8 GB | USPTO patent sequences |
 
 Everything except `uspto` builds in a couple of minutes on a fast connection — PDB and
 SwissProt come down as prebuilt MMseqs2 databases rather than being built locally. `uspto`
-is the one that costs: a ~3.4 GB download that unpacks to ~9.3 GB, then a ~25 min build.
-It is in the default arm list, so a plain run builds it; `SKIP_USPTO=1` leaves a ~1.7 GB
-set that covers everything but patents.
+is the one that costs: a ~3.4 GB download that unpacks to ~9.3 GB, then the conversion and
+`createdb`. Measured end to end at **42 minutes**. It is in the default arm list, so a plain
+run builds it; `SKIP_USPTO=1` leaves a ~1.7 GB set that covers everything but patents.
+
+`thpdb` comes from the [Figshare deposit](https://figshare.com/articles/dataset/5198005)
+rather than the THPdb web host, which is frequently unreachable. That deposit is a TSV, and
+multi-chain therapeutics pack every chain into one cell, so `scripts/build/thpdb_to_fasta.py`
+splits them apart — 162 distinct chains across 163 therapeutics. The other 76 THPdb entries
+carry no one-letter sequence upstream (`N.A.`, or three-letter notation).
 
 Having the patent database on disk is not the same as searching it: the patent arm is off
-the *query* path by default because it costs seconds per query rather than milliseconds.
-Pass `--patent` when you want it.
+the *query* path by default because it is slow. Measured on a 4-sequence batch against a
+freshly built root, `--patent` took **13 min** against ~70 s for the same batch without it —
+the patent arm was 789 s of the 797. If you intend to use it often, build the index once:
+
+```bash
+mmseqs createindex ~/prescreen-dbs/uspto/uspto tmp --split-memory-limit 2G
+```
+
+It roughly triples that arm's disk use, which is why the build script does not do it for
+you.
 
 Every arm is verified **by a real search, not by file presence**, before the script calls
 it done. That check exists because `mmseqs createdb` reports success on a file it could not
@@ -120,9 +138,9 @@ it directly yields a database holding exactly one record that silently matches n
 
 ```bash
 export PRESCREEN_DB_ROOT=~/prescreen-dbs
-prescreen examples/submissions.fasta -o report/
-prescreen submissions.csv --id-column id --sequence-column sequence -o report/
-prescreen submissions.fasta --patent -o report/        # + the USPTO arm
+uv run prescreen examples/submissions.fasta -o report/
+uv run prescreen submissions.csv --id-column id --sequence-column sequence -o report/
+uv run prescreen submissions.fasta --patent -o report/        # + the USPTO arm
 ```
 
 ~72 s for 4 sequences across the seven public non-patent arms; ~17 s if only the four
@@ -154,7 +172,7 @@ pa["arms_missing"]    # ['pdb', 'swissprot', 'plabdab'] — the verdict is weake
 or before you run:
 
 ```bash
-python -c "from prescreen import refdb; print(refdb.available())"
+uv run python -c "from prescreen import refdb; print(refdb.available())"
 ```
 
 ## Output
