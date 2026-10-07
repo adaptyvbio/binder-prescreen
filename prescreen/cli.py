@@ -177,7 +177,13 @@ def main(
     counts = {}
     for rec in screened["results"].values():
         counts[rec["verdict"]] = counts.get(rec["verdict"], 0) + 1
-    click.echo(f"screened {len(records)} sequences -> {csv_path}")
+    click.echo(f"screened {len(screened['results'])} sequences -> {csv_path}")
+    if screened.get("dropped"):
+        click.echo(
+            f"  WARNING: {len(screened['dropped'])} submission(s) had no usable sequence "
+            f"and were not screened: {', '.join(screened['dropped'])}",
+            err=True,
+        )
     absent = sorted(
         {a for r in screened["results"].values() for a in (r["prior_art"].get("arms_missing") or [])}
     )

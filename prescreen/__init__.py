@@ -36,6 +36,7 @@ from pathlib import Path
 from . import cluster as _cluster
 from . import flags as _flags
 from . import mmseqs, priorart, refdb
+from .chains import merge_whole, split_submissions
 from .classify import classify, compare_declared
 from .config import Config, resolve_db_root
 from .regions import extract, focus_region
@@ -114,15 +115,15 @@ def screen(
     cfg = cfg or Config.from_env()
     if cfg.db_root is None:
         cfg.db_root = resolve_db_root()
-    # ``:`` separates the chains of a multi-chain submission. Concatenate without a
-    # linker: classify() already recognises a paired H+L inside one string, whereas an
-    # inserted GGGGS would make every paired entry look like an scFv.
-    chain_counts = {k: v.count(":") + 1 for k, v in records.items() if v}
-    records = {
-        k: v.strip().upper().replace("*", "").replace(":", "")
-        for k, v in records.items()
-        if v
-    }
+    # ``:`` separates the chains of a multi-chain submission, and the two halves of this
+    # pipeline want different things from them. Classification reads the concatenation, so
+    # a paired H+L still types as a Fab rather than as two loose chains; the searches run
+    # per chain, because every reference is one chain and a concatenated query dilutes
+    # coverage by the fraction of the molecule that is not the matching chain. See
+    # :mod:`prescreen.chains`.
+    index = split_submissions(records)
+    records = index.concat
+    chain_counts = {k: len(v) for k, v in index.by_submission.items()}
     if not records:
         return {"results": {}, "timing": {}, "config": cfg.as_dict(), "target": {}}
 
@@ -151,12 +152,22 @@ def screen(
     timing["reference_annotation"] = round(time.time() - t, 2)
 
     t = time.time()
-    query_fasta = mmseqs.write_fasta(records, workdir / "queries.fasta")
-    target_whole = reference.search_whole(
-        query_fasta,
-        workdir / "target",
-        mmseqs_bin=cfg.mmseqs_bin,
-        threads=cfg.threads,
+    # One record per CHAIN from here to the merge: the query ids are synthetic, so they
+    # survive a submission name containing whitespace, which MMseqs2 would otherwise
+    # truncate into a key that matches nothing.
+    query_fasta = mmseqs.write_fasta(index.queries, workdir / "queries.fasta")
+    (workdir / "query_map.tsv").write_text(
+        "query_id\tsubmission_id\tchain\tlength\n"
+        + "".join("\t".join(str(c) for c in r) + "\n" for r in index.map_rows())
+    )
+    target_whole = merge_whole(
+        reference.search_whole(
+            query_fasta,
+            workdir / "target",
+            mmseqs_bin=cfg.mmseqs_bin,
+            threads=cfg.threads,
+        ),
+        index,
     )
     timing["target_whole"] = round(time.time() - t, 2)
 
@@ -184,7 +195,9 @@ def screen(
         )
     if not skip_prior_art and cfg.db_root:
         t = time.time()
-        prior = priorart.search(records, cfg, workdir / "priorart")
+        prior = priorart.merge_chains(
+            priorart.search(index.queries, cfg, workdir / "priorart"), index, cfg
+        )
         timing["prior_art"] = round(time.time() - t, 2)
         # Paratope-aware prior art: re-number the top hits' own sequences and compare
         # binding regions, so a shared framework is not mistaken for a known molecule.
@@ -219,6 +232,7 @@ def screen(
             "focus_chain": ann["focus_chain"],
             "focus_region": ann["focus_region"],
             "n_chains": ann["n_chains"],
+            "chain_lengths": index.lengths.get(qid, [ann["length"]]),
             "declared_class": ann["declared_class"],
             "declared_class_match": ann["declared_class_match"],
             "prior_art": prior.get(qid, {}),
@@ -236,6 +250,10 @@ def screen(
         tmp_holder.cleanup()
     return {
         "results": results,
+        # Submissions whose sequence was empty once cleaned (":", whitespace, "***").
+        # Named rather than dropped in silence: a submission missing from the report is
+        # indistinguishable from one that passed.
+        "dropped": index.dropped,
         "timing": timing,
         "config": cfg.as_dict(),
         "target": {
@@ -298,6 +316,15 @@ def to_rows(screened: dict) -> list:
                 "verbatim_fragment_of": sub.get("reference"),
                 "cluster_representative": rec["batch"].get("cluster_representative"),
                 "cluster_size": rec["batch"].get("cluster_size"),
+                # Which INPUT chain (1-based, the n-th ``:``-separated part) produced each
+                # hit. Not to be confused with target_region_chain, which is an IMGT chain
+                # letter (H/L/S/W) within a single numbered domain.
+                "chain_lengths": ";".join(str(n) for n in rec.get("chain_lengths") or []),
+                "prior_art_chain": pa_best.get("chain"),
+                "design_chain": pa_design.get("chain"),
+                "prior_art_region_chain": pa_region.get("chain"),
+                "target_chain": whole.get("chain"),
+                "target_region_chain": region.get("region_chain"),
             }
         )
     return rows

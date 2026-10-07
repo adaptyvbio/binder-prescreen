@@ -126,9 +126,15 @@ my-fab,EVQLVESGGG...VTVSS:DIQMTQSP...KVEIK,fab_kappa
 ```
 
 - `name` — the submission id. Duplicates are rejected rather than silently overwritten.
-- `sequence` — chains of a multi-chain entry are joined by `:`. They are concatenated
-  before screening, with no linker inserted, so a Fab still classifies as a Fab and not
-  as an scFv.
+- `sequence` — chains of a multi-chain entry are joined by `:`, and the two halves of the
+  pipeline treat them differently on purpose. **Classification** reads the chains
+  concatenated, with no linker inserted, so a Fab still types as a Fab rather than as two
+  loose chains. **The searches run per chain**, because every reference is a single chain
+  (median 108 aa) and a concatenated query dilutes coverage by the fraction of the molecule
+  that is not the matching chain — a verbatim adalimumab Fab queried as one 432-aa string
+  scores `qcov = 0.51` against its own heavy chain, under every threshold that matters.
+  Results are aggregated back to one row per submission; `prior_art_chain`, `design_chain`
+  and `target_chain` say which input chain produced each hit.
 - `molecule_class` — optional, and **cross-checked, never trusted**: the classifier still
   decides which region is compared, and a disagreement is reported as
   `declared_class_match=mismatch` instead of changing the comparison. A declaration the

@@ -83,8 +83,10 @@ uv run prescreen submissions.fasta -o report/ --flagged-only  # drop the passes 
 
 CSV input follows the [Proteinbase submission
 template](https://proteinbase.com/templates/competition-submission-template.csv):
-`name,sequence,molecule_class`. Chains of a multi-chain entry are joined by `:` and are
-concatenated (no linker) before screening. `molecule_class` is cross-checked against the
+`name,sequence,molecule_class`. Chains of a multi-chain entry are joined by `:`: they are
+concatenated (no linker) for classification, so a Fab types as a Fab, and searched **per
+chain**, because the references are per-chain and a concatenated query would never reach
+the coverage thresholds. `prior_art_chain` / `target_chain` name the input chain that hit. `molecule_class` is cross-checked against the
 classifier and reported as `declared_class_match`; it never decides which region is
 compared. Duplicate names are rejected. See `examples/submissions.csv`.
 

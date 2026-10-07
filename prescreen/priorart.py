@@ -27,6 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import mmseqs, refdb
+from .chains import _relabel
 from .config import Config
 
 
@@ -132,6 +133,71 @@ def search(
     return results
 
 
+def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
+    """Collapse per-chain prior-art slots into one slot per submission.
+
+    ``search`` is chain-agnostic — it takes opaque query ids and returns the same ids — so
+    the chain bookkeeping lives here. Every row is relabelled with its submission id and
+    the chain that found it before being merged, so the synthetic query ids never reach the
+    report.
+    """
+    keep = max(1, cfg.prior_art_top_hits)
+    merged: dict = {}
+    for sid, qids in index.by_submission.items():
+        slot = {
+            "best": None,
+            "best_design": None,
+            "per_db": {},
+            "top": [],
+            "per_chain": {},
+            "arms_searched": [],
+            "arms_missing": [],
+        }
+        for qid in qids:
+            chain = index.chain_of(qid)
+            part = per_chain.get(qid)
+            if part is None:
+                continue
+            # All chains of a batch share one refdb.available() call, so these agree.
+            slot["arms_searched"] = part.get("arms_searched", [])
+            slot["arms_missing"] = part.get("arms_missing", [])
+            seen: dict = {}
+            for row in part.get("top") or []:
+                seen[id(row)] = _relabel(row, sid, chain)
+            for key in ("best", "best_design"):
+                row = part.get(key)
+                if row is not None:
+                    _relabel(row, sid, chain)
+                # Strict ``>``: walking chains in order, a tie goes to the lowest chain
+                # number, which the template's convention makes the heavy chain.
+                if row is not None and (
+                    slot[key] is None
+                    or row["similarity_check"] > slot[key]["similarity_check"]
+                ):
+                    slot[key] = row
+            for arm, row in (part.get("per_db") or {}).items():
+                _relabel(row, sid, chain)
+                prev = slot["per_db"].get(arm)
+                if prev is None or row["similarity_check"] > prev["similarity_check"]:
+                    slot["per_db"][arm] = row
+            slot["top"].extend(part.get("top") or [])
+            slot["per_chain"][chain] = {
+                "best": part.get("best"),
+                "best_design": part.get("best_design"),
+                "n_hits": len(part.get("top") or []),
+            }
+        # Sort on the composite ALONE. Python's sort is stable and each chain's list
+        # arrived already sorted by it, so a single-chain merge returns the identical
+        # order; adding db or chain to the key would reorder ties within one chain.
+        slot["top"] = sorted(
+            slot["top"], key=lambda r: r["similarity_check"], reverse=True
+        )[:keep]
+        slot["best_chain"] = (slot["best"] or {}).get("chain")
+        slot["best_design_chain"] = (slot["best_design"] or {}).get("chain")
+        merged[sid] = slot
+    return merged
+
+
 def region_identity_vs_hits(
     query_regions: dict,
     category: str,
@@ -166,7 +232,13 @@ def region_identity_vs_hits(
     """
     from .regions import FOCUS, extract, focus_region, identity_fn_for
 
-    empty = {"region_identity": None, "hit": None, "db": None, "hit_region": None}
+    empty = {
+        "region_identity": None,
+        "hit": None,
+        "db": None,
+        "hit_region": None,
+        "chain": None,
+    }
     if region_kind == "whole":
         return empty
     _chain, q_focus = focus_region(query_regions)
@@ -196,6 +268,9 @@ def region_identity_vs_hits(
                 "hit": hit.get("target"),
                 "db": hit.get("db"),
                 "hit_region": h_focus,
+                # Which input chain's hit supplied this region, so a reviewer can see
+                # whether a light-chain hit is what demoted a heavy-chain match.
+                "chain": hit.get("chain"),
             }
     if compared and best["region_identity"] is None:
         # Every comparison scored 0.0, so the loop never beat the initial None. The region
