@@ -1,0 +1,596 @@
+{
+  "schema": "adaptyv.prescreen.reference_manifest/1",
+  "generated_utc": "2026-10-06T20:25:12+00:00",
+  "purpose": "Prior-art reference set for the sequence-level prescreen of competition submissions: is the submitted sequence already public? It makes no judgement about whether the scaffold is de novo.",
+  "mmseqs_version": "18.8cc5c",
+  "db_root_env": "PRESCREEN_DB_ROOT",
+  "fallback_roots": [
+    "<PRESCREEN_DB_ROOT>",
+    "/public-sequence-dbs"
+  ],
+  "length_split_aa": 50,
+  "profiles": {
+    "standard": [
+      "-s",
+      "7.5",
+      "-e",
+      "1e-3",
+      "--max-seqs",
+      "300",
+      "--split-memory-limit",
+      "2G"
+    ],
+    "short": [
+      "-s",
+      "7.5",
+      "-k",
+      "6",
+      "--spaced-kmer-mode",
+      "0",
+      "--mask",
+      "0",
+      "--min-ungapped-score",
+      "5",
+      "--comp-bias-corr",
+      "0",
+      "-e",
+      "1e4",
+      "--max-seqs",
+      "300",
+      "--split-memory-limit",
+      "2G"
+    ],
+    "baseline_production_defaults": []
+  },
+  "per_arm_overrides": {
+    "uspto": [
+      "--split-memory-limit",
+      "3G",
+      "--db-load-mode",
+      "3"
+    ]
+  },
+  "per_arm_max_threads": {
+    "uspto": 4
+  },
+  "format_output": [
+    "query",
+    "target",
+    "fident",
+    "alnlen",
+    "qlen",
+    "mismatch",
+    "qcov",
+    "tcov"
+  ],
+  "composite": "similarity = fident * qcov  (same as production db_check); distance = qlen * (1 - similarity)",
+  "arms": {
+    "pdb": {
+      "arm": "general",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/pdb/pdb",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 1046623,
+      "dbtype": {
+        "raw": 524288,
+        "base_type": "amino_acids",
+        "int_encoded": true
+      },
+      "data_bytes": 300439048,
+      "index_sha256": "bbd03af7663497b1980ca73ea6c530a22c64665dbe88f6f5574178ce3cfa1d81",
+      "db_built": "2025-10-27",
+      "age_days": 344.4,
+      "upstream_release": "1761560223",
+      "createdb_source_file": "pdb_seqres.txt.gz",
+      "source_url": "https://files.rcsb.org/pub/pdb/derived_data/pdb_seqres.txt.gz",
+      "build_recipe": "mmseqs databases PDB ./pdb /tmp\n",
+      "source_files": [],
+      "note": "all PDB seqres chains; ~5.7% are mol:na and never match a protein query"
+    },
+    "swissprot": {
+      "arm": "general",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/swissprot/swissprot",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 573661,
+      "dbtype": {
+        "raw": 524288,
+        "base_type": "amino_acids",
+        "int_encoded": true
+      },
+      "data_bytes": 208782460,
+      "index_sha256": "77238e03def0777edcbfb42da982731dea97771f494b20375e0c903394983a48",
+      "db_built": "2025-10-27",
+      "age_days": 344.4,
+      "upstream_release": "UniProt Knowledgebase Release 2025_04 consists of:\nUniProtKB/Swiss-Prot Release 2025_04 of 08-Oct-2025\nUniProtKB/TrEMBL Release 2025_04 of 08-Oct-2025",
+      "createdb_source_file": "uniprot_sprot.fasta.gz",
+      "source_url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz",
+      "build_recipe": "mmseqs databases UniProtKB/Swiss-Prot ./swissprot /tmp\n",
+      "source_files": [],
+      "note": ""
+    },
+    "plabdab": {
+      "arm": "antibody",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/plabdab/plabdab",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 353788,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 41171522,
+      "index_sha256": "a6cec000b8ca220b9eea2058cd012e987b28d63d083bc12c72b1c50e238f317e",
+      "db_built": "2025-10-27",
+      "age_days": 344.4,
+      "upstream_release": null,
+      "createdb_source_file": "plabdab.fasta",
+      "source_url": "https://opig.stats.ox.ac.uk/webapps/plabdab/static/downloads/paired_sequences.csv.gz",
+      "build_recipe": "wget https://opig.stats.ox.ac.uk/webapps/plabdab/static/downloads/paired_sequences.csv.gz\n\nrm paired_sequences.csv\ngunzip paired_sequences.csv.gz\n\npython convert.py paired_sequences.csv plabdab.fasta\n\nmmseqs createdb plabdab.fasta plabdab\n",
+      "source_files": [
+        {
+          "file": "paired_sequences.csv",
+          "size_bytes": 119126051,
+          "mtime": "2024-08-28",
+          "sha256": "4fe2d941936a4f94b074932d7cb63683f47328566f683bbaa03a2a5882948c14",
+          "sha256_note": null
+        },
+        {
+          "file": "plabdab.fasta",
+          "size_bytes": 76608085,
+          "mtime": "2025-10-27",
+          "sha256": "cfd212b6605b5f76833ad5bf68d8673e0ac09b1be1b1b1576efb3aa0657a744f",
+          "sha256_note": null
+        }
+      ],
+      "note": "paired dump only: every entry has a heavy AND a light chain, so it contains no single-domain antibodies - search plabdab_nano alongside it"
+    },
+    "plabdab_nano": {
+      "arm": "antibody",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "work/dbs/plabdab_nano/plabdab_nano",
+      "root": "work/dbs",
+      "provenance": "built in this session",
+      "entries": 2228,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 274830,
+      "index_sha256": "7230f2552cf74bd611e4ee9e3eca4fb5729c5d2983d825e3ff5deecd759562bc",
+      "db_built": "2026-10-06",
+      "age_days": 0.0,
+      "upstream_release": null,
+      "createdb_source_file": "plabdab_nano.fasta",
+      "source_url": "https://opig.stats.ox.ac.uk/webapps/plabdab-nano/static/downloads/all_sequences.csv.gz",
+      "build_recipe": null,
+      "source_files": [],
+      "note": "VHH / VNAR / sdAb prior art, one record per unique sequence"
+    },
+    "therasabdab": {
+      "arm": "antibody",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "work/dbs/therasabdab/therasabdab",
+      "root": "work/dbs",
+      "provenance": "built in this session",
+      "entries": 2533,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 294882,
+      "index_sha256": "825684bde06afa920da6f458027ffec6517615b7e28d06b88b46668320cdd760",
+      "db_built": "2026-10-06",
+      "age_days": 0.0,
+      "upstream_release": null,
+      "createdb_source_file": "therasabdab.fasta",
+      "source_url": "https://opig.stats.ox.ac.uk/webapps/sabdab-sabpred/static/downloads/TheraSAbDab_SeqStruc_OnlineDownload.csv",
+      "build_recipe": null,
+      "source_files": [],
+      "note": "therapeutic antibody chains incl. the approved anti-TNF biologics"
+    },
+    "thpdb": {
+      "arm": "general",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/thpdb/thpdb",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 239,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 76834,
+      "index_sha256": "10368880340cd85c73ff92cb19b1615b45ce5a23eb78c1c39365943342688ee1",
+      "db_built": "2025-10-27",
+      "age_days": 344.4,
+      "upstream_release": null,
+      "createdb_source_file": "thpdb.fasta",
+      "source_url": "https://webs.iiitd.edu.in/raghava/thpdb/sequences/allseq",
+      "build_recipe": "\nwget https://webs.iiitd.edu.in/raghava/thpdb/sequences/allseq -O thpdb.fasta\n\n\nmmseqs createdb thpdb.fasta thpdb\n",
+      "source_files": [
+        {
+          "file": "thpdb.fasta",
+          "size_bytes": 78513,
+          "mtime": "2017-04-04",
+          "sha256": "14b8df3c4eeededde50eead57233c9e964dd0d3665834fa79af132677793f492",
+          "sha256_note": null
+        }
+      ],
+      "note": "FDA-approved therapeutic proteins and peptides; upstream FASTA dated 2017"
+    },
+    "proteinbase_public": {
+      "arm": "designs",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/proteinbase_public/proteinbase_public",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 1494,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 161170,
+      "index_sha256": "4f69b1d27a5ed259f993de4e25ab057be82315bcac453dc2920e57ca6ec158ec",
+      "db_built": "2025-11-12",
+      "age_days": 328.0,
+      "upstream_release": null,
+      "createdb_source_file": "proteins.fasta",
+      "source_url": "proteinbase.com public API (/api/proteins)",
+      "build_recipe": "\nbash scripts/build_reference_dbs.sh OUT_DIR proteinbase_public\n",
+      "source_files": [
+        {
+          "file": "proteins.fasta",
+          "size_bytes": 187998,
+          "mtime": "2025-11-12",
+          "sha256": "a8e8a4539745e94b02cac35c997b3054e72b38b249aebdebc8a7f9acbd1d2c6e",
+          "sha256_note": null
+        }
+      ],
+      "note": "published designs from earlier rounds - the designed-binder prior art"
+    },
+    "proteinbase_internal": {
+      "arm": "designs",
+      "visibility": "internal",
+      "present": true,
+      "db_prefix": "<PRESCREEN_DB_ROOT>/proteinbase/proteinbase",
+      "root": "<PRESCREEN_DB_ROOT>",
+      "provenance": "prebuilt on the workstation mount, verified here",
+      "entries": 1051,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 118378,
+      "index_sha256": "0b03774462afbc97d2f920db3ad5c7d1e09d04a03c28fcadfd1b60ba95efce10",
+      "db_built": "2025-11-12",
+      "age_days": 328.0,
+      "upstream_release": null,
+      "createdb_source_file": "proteins.fasta",
+      "source_url": "unpublished designs; not built by scripts/build_reference_dbs.sh",
+      "build_recipe": "\nnot built by this repository\n",
+      "source_files": [
+        {
+          "file": "proteins.fasta",
+          "size_bytes": 341036,
+          "mtime": "2025-11-12",
+          "sha256": "ccfaf24ce9fe5f396134a32e58f9b9f4f7479f46038fb9ebf0828cb2f99758d3",
+          "sha256_note": null
+        }
+      ],
+      "note": "NOT public prior art. Use only for an internal-duplicate flag, never to tell a competitor their sequence is 'already known'"
+    },
+    "uspto": {
+      "arm": "patent",
+      "visibility": "public",
+      "present": true,
+      "db_prefix": "work/dbs/uspto/uspto",
+      "root": "work/dbs",
+      "provenance": "built in this session",
+      "entries": 10206785,
+      "dbtype": {
+        "raw": 0,
+        "base_type": "amino_acids",
+        "int_encoded": false
+      },
+      "data_bytes": 2023576202,
+      "index_sha256": "e71e109aefaf48a298565537de84619b4938cfe3ffda258a17f95496f0bfde24",
+      "db_built": "2026-10-06",
+      "age_days": 0.0,
+      "upstream_release": null,
+      "createdb_source_file": "uspto_prt.fasta",
+      "source_url": "https://ftp.ebi.ac.uk/pub/databases/patentdata/uspto_prt.dat.gz",
+      "build_recipe": null,
+      "source_files": [],
+      "note": "patent protein sequences; createdb must be run on a FASTA conversion, not on the EMBL-style .dat"
+    }
+  },
+  "disclosure_policy": "Which arms may be cited to a competitor as evidence their sequence is already known: the 8 arms with visibility='public' only - pdb, swissprot, plabdab, plabdab_nano, therasabdab, thpdb, proteinbase_public, uspto. NOT proteinbase_internal (visibility='internal'), and NOT sequence_similarity/competitionseqs.fasta, which is the same private visibility slice of the proteinbase proteins table: both are other submitters' unpublished work. Search them if you want an internal-duplicate flag for the organisers, but never surface them in feedback to a submitter. prescreen_refdb.best_prior_art() enforces this by filtering to PUBLIC_ARMS; do not widen it.",
+  "verification_notes": [
+    "pdb holds 987,345 mol:protein and 59,278 mol:na chains; `mmseqs databases PDB` does not filter by molecule type. Nucleic-acid chains cannot match a protein query, so the effective protein prior art is 987,345 chains.",
+    "The mounted pdb/swissprot/plabdab databases store sequences int-encoded (dbtype flag bit 0x80000 on pdb and swissprot), so the data files are not readable as text; use `mmseqs convert2fasta` to inspect them.",
+    "proteinbase_internal is STALE relative to its own source: proteins.fasta holds 2,578 records but the database index holds 1,051. Re-run createdb before relying on it. It is an internal slice and is not public prior art in any case.",
+    "Every arm was confirmed searchable by a real query, not just by createdb reporting success - the failure mode this project has already hit once."
+  ],
+  "benchmarks": {
+    "recovery_by_arm": [
+      {
+        "arm": "pdb",
+        "n": "120",
+        "baseline_pct": "78.3",
+        "tuned_pct": "100.0",
+        "n_short": "84.0",
+        "baseline_short_pct": "69.0",
+        "tuned_short_pct": "100.0"
+      },
+      {
+        "arm": "plabdab",
+        "n": "20",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0",
+        "n_short": "0.0",
+        "baseline_short_pct": "0.0",
+        "tuned_short_pct": "0.0"
+      },
+      {
+        "arm": "plabdab_nano",
+        "n": "20",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0",
+        "n_short": "0.0",
+        "baseline_short_pct": "0.0",
+        "tuned_short_pct": "0.0"
+      },
+      {
+        "arm": "proteinbase_public",
+        "n": "74",
+        "baseline_pct": "94.6",
+        "tuned_pct": "100.0",
+        "n_short": "50.0",
+        "baseline_short_pct": "92.0",
+        "tuned_short_pct": "100.0"
+      },
+      {
+        "arm": "swissprot",
+        "n": "120",
+        "baseline_pct": "83.3",
+        "tuned_pct": "100.0",
+        "n_short": "84.0",
+        "baseline_short_pct": "76.2",
+        "tuned_short_pct": "100.0"
+      },
+      {
+        "arm": "therasabdab",
+        "n": "20",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0",
+        "n_short": "0.0",
+        "baseline_short_pct": "0.0",
+        "tuned_short_pct": "0.0"
+      },
+      {
+        "arm": "thpdb",
+        "n": "30",
+        "baseline_pct": "93.3",
+        "tuned_pct": "100.0",
+        "n_short": "10.0",
+        "baseline_short_pct": "80.0",
+        "tuned_short_pct": "100.0"
+      },
+      {
+        "arm": "uspto",
+        "n": "90",
+        "baseline_pct": "77.8",
+        "tuned_pct": "100.0",
+        "n_short": "60.0",
+        "baseline_short_pct": "66.7",
+        "tuned_short_pct": "100.0"
+      }
+    ],
+    "recovery_by_length": [
+      {
+        "lband": "10-14",
+        "n": "42",
+        "baseline_pct": "11.9",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "15-19",
+        "n": "42",
+        "baseline_pct": "50.0",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "20-24",
+        "n": "46",
+        "baseline_pct": "78.3",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "25-29",
+        "n": "36",
+        "baseline_pct": "88.9",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "30-39",
+        "n": "80",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "40-49",
+        "n": "42",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "50-79",
+        "n": "48",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "80-149",
+        "n": "106",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0"
+      },
+      {
+        "lband": "150-399",
+        "n": "48",
+        "baseline_pct": "100.0",
+        "tuned_pct": "100.0"
+      }
+    ],
+    "batch_1000_queries_seconds": [
+      {
+        "arm": "pdb",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "18.4",
+        "queries_with_hit": "443",
+        "median_similarity": "0.76"
+      },
+      {
+        "arm": "pdb",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "39.2",
+        "queries_with_hit": "502",
+        "median_similarity": "0.741"
+      },
+      {
+        "arm": "swissprot",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "18.8",
+        "queries_with_hit": "409",
+        "median_similarity": "0.656"
+      },
+      {
+        "arm": "swissprot",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "35.4",
+        "queries_with_hit": "458",
+        "median_similarity": "0.641"
+      },
+      {
+        "arm": "plabdab",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "13.4",
+        "queries_with_hit": "302",
+        "median_similarity": "0.748"
+      },
+      {
+        "arm": "plabdab",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "20.8",
+        "queries_with_hit": "358",
+        "median_similarity": "0.725"
+      },
+      {
+        "arm": "plabdab_nano",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "2.6",
+        "queries_with_hit": "298",
+        "median_similarity": "0.74"
+      },
+      {
+        "arm": "plabdab_nano",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "4.3",
+        "queries_with_hit": "349",
+        "median_similarity": "0.715"
+      },
+      {
+        "arm": "therasabdab",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "2.6",
+        "queries_with_hit": "302",
+        "median_similarity": "0.746"
+      },
+      {
+        "arm": "therasabdab",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "4.4",
+        "queries_with_hit": "351",
+        "median_similarity": "0.722"
+      },
+      {
+        "arm": "thpdb",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "1.7",
+        "queries_with_hit": "296",
+        "median_similarity": "0.709"
+      },
+      {
+        "arm": "thpdb",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "3.3",
+        "queries_with_hit": "349",
+        "median_similarity": "0.688"
+      },
+      {
+        "arm": "proteinbase_public",
+        "setting": "baseline",
+        "n_queries": "1000",
+        "seconds": "2.8",
+        "queries_with_hit": "310",
+        "median_similarity": "0.752"
+      },
+      {
+        "arm": "proteinbase_public",
+        "setting": "auto",
+        "n_queries": "1000",
+        "seconds": "4.3",
+        "queries_with_hit": "383",
+        "median_similarity": "0.714"
+      }
+    ],
+    "real_submissions_1000": {
+      "baseline_queries_at_sim_ge_0.95": 23,
+      "baseline_queries_at_sim_ge_0.9": 47,
+      "baseline_queries_at_sim_ge_0.7": 306,
+      "baseline_queries_with_any_hit": 461,
+      "baseline_seconds_all_arms": 56.5,
+      "auto_queries_at_sim_ge_0.95": 23,
+      "auto_queries_at_sim_ge_0.9": 47,
+      "auto_queries_at_sim_ge_0.7": 309,
+      "auto_queries_with_any_hit": 533,
+      "auto_seconds_all_arms": 103.3,
+      "n_queries": 1000
+    },
+    "panel_design": "494 queries with a known answer: verbatim copies of entries drawn from each arm across length bands 10-400 aa, plus the same sequences with 1-2 substitutions. Recovered = a hit whose composite fident*qcov is within 0.02 of the arithmetically expected value, which is 1.0 for a verbatim copy and (L-m)/L for m substitutions.",
+    "headline": "Pooled over all 8 arms (494 query-arm pairs, each query searched against the arm that holds its answer), production defaults recover 85.4% of known prior art and the tuned length-routed settings 100%. Under 50 aa: 75.0% -> 100%. Under 20 aa: 31.0% -> 100%; at 10-14 aa defaults find 14.3% of verbatim copies and 0% of 2-substitution variants. No pair was found by defaults and missed by the tuned settings (0 of 494), 70 were found only by the tuned settings, and on the 424 pairs both settings found the tuned composite was never lower: identical on 422, higher on 2. In a further 172 of those 424 the composite was identical but a different, equally good target was cited, because PDB and SwissProt hold many identical copies of the same chain and which copy wins is arbitrary.",
+    "caveats": [
+      "Validated against the patent arm (uspto): 70/90 baseline, 90/90 tuned. That arm needs --split-memory-limit 3G --db-load-mode 3 and at most 4 threads on a 15 GB host, and runs 15 target splits.",
+      "On 1,000 real past submissions only 55 are under 50 aa, so the aggregate flag counts at sim>=0.90 are unchanged; the difference is confined to the short tail, where defaults returned no prior-art evidence at all for 48 of those 55."
+    ]
+  }
+}

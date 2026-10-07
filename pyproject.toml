@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tnfa-prescreen"
+version = "0.1.0"
+description = "Sequence-level prior-art and known-binder prescreen for protein-design binder competitions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Elastic-2.0" }
+classifiers = [
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+# biopython: the pairwise aligner behind the vendored scaffold paratope masks.
+dependencies = ["antpack==0.3.8.6.2", "biopython", "click", "loguru", "pandas"]
+
+[project.scripts]
+prescreen = "prescreen.cli:main"
+
+[tool.setuptools]
+packages = ["prescreen", "prescreen._proteintyper"]
+
+[tool.setuptools.package-data]
+prescreen = ["data/*"]
