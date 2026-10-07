@@ -56,15 +56,60 @@ __all__ = [
 __version__ = "0.1.0"
 
 
-def _annotate(records: dict, declared: dict | None = None, chains: dict | None = None) -> dict:
+def _best_region(reference, ann: dict) -> dict:
+    """Best target-region comparison across a submission's input chains.
+
+    Each chain is compared in its own right and the strongest result wins — an exact match
+    beats any inexact one. ``supporting_exact_regions`` is summed across chains, so a Fab
+    scored chain-by-chain corroborates exactly as it does scored whole.
+    """
+    best, support = None, 0
+    for regions in ann["chain_regions"]:
+        hit = reference.compare_region(
+            regions, ann["category"], ann["region_kind"]
+        ).as_dict()
+        support += hit.get("supporting_exact_regions") or 0
+        if best is None:
+            best = hit
+            continue
+        rank = (hit.get("region_exact"), hit.get("region_identity") or -1.0)
+        prev = (best.get("region_exact"), best.get("region_identity") or -1.0)
+        if rank > prev:
+            best = hit
+    if best is None:
+        return {}
+    best["supporting_exact_regions"] = support
+    return best
+
+
+def _annotate(
+    records: dict,
+    declared: dict | None = None,
+    chains: dict | None = None,
+    chain_seqs: dict | None = None,
+) -> dict:
     """Classify and region-annotate a batch of submissions."""
     declared = declared or {}
     chains = chains or {}
+    chain_seqs = chain_seqs or {}
     out: dict = {}
     for qid, seq in records.items():
         cl = classify(seq)
         regions = extract(seq, cl.category, cl.region_kind)
         chain, focus = focus_region(regions)
+        # Regions extracted from each input chain on its own, as well as from the
+        # concatenation. antpack numbers a two-domain string by labelling one domain H and
+        # the other L, which is right for a Fab and wrong for anything multivalent: a
+        # bivalent VHH has its second domain filed under L and compared against the
+        # light-chain CDR index, where no VHH CDR exists. Comparing each submitted chain in
+        # its own right costs one extra numbering per chain and removes that whole class of
+        # misassignment. For a single-chain submission this is the same single extraction.
+        parts = chain_seqs.get(qid) or []
+        per_chain = (
+            [regions]
+            if len(parts) < 2
+            else [extract(c, cl.category, cl.region_kind) for c in parts]
+        )
         out[qid] = {
             "category": cl.category,
             "region_kind": cl.region_kind,
@@ -72,6 +117,7 @@ def _annotate(records: dict, declared: dict | None = None, chains: dict | None =
             "length": cl.length,
             "category_evidence": cl.evidence,
             "regions": regions,
+            "chain_regions": per_chain,
             "focus_chain": chain,
             "focus_region": focus,
             "n_chains": chains.get(qid, 1),
@@ -136,7 +182,11 @@ def screen(
 
     timing: dict = {}
     t = time.time()
-    annotations = _annotate(records, declared, chain_counts)
+    chain_seqs = {
+        sid: [index.queries[q] for q in qids]
+        for sid, qids in index.by_submission.items()
+    }
+    annotations = _annotate(records, declared, chain_counts, chain_seqs)
     timing["classify_regions"] = round(time.time() - t, 2)
 
     data_dir = Path(__file__).parent / "data"
@@ -173,9 +223,7 @@ def screen(
 
     t = time.time()
     target_region = {
-        qid: reference.compare_region(
-            ann["regions"], ann["category"], ann["region_kind"]
-        ).as_dict()
+        qid: _best_region(reference, ann)
         for qid, ann in annotations.items()
     }
     timing["target_region"] = round(time.time() - t, 2)
@@ -205,8 +253,8 @@ def screen(
         hit_cache: dict = {}
         for qid, slot in prior.items():
             ann = annotations[qid]
-            slot["region"] = priorart.region_identity_vs_hits(
-                ann["regions"],
+            slot["region"] = priorart.best_region_vs_hits(
+                ann["chain_regions"],
                 ann["category"],
                 ann["region_kind"],
                 slot.get("top") or [],

@@ -161,9 +161,8 @@ def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
             # All chains of a batch share one refdb.available() call, so these agree.
             slot["arms_searched"] = part.get("arms_searched", [])
             slot["arms_missing"] = part.get("arms_missing", [])
-            seen: dict = {}
             for row in part.get("top") or []:
-                seen[id(row)] = _relabel(row, sid, chain)
+                _relabel(row, sid, chain)
             for key in ("best", "best_design"):
                 row = part.get(key)
                 if row is not None:
@@ -196,6 +195,31 @@ def merge_chains(per_chain: dict, index, cfg: Config) -> dict:
         slot["best_design_chain"] = (slot["best_design"] or {}).get("chain")
         merged[sid] = slot
     return merged
+
+
+def best_region_vs_hits(
+    chain_regions: list,
+    category: str,
+    region_kind: str,
+    hits: list,
+    cache: dict | None = None,
+) -> dict:
+    """Best :func:`region_identity_vs_hits` result across a submission's input chains.
+
+    Same reason as the target arm: a multivalent construct numbered as one string has its
+    second domain mislabelled, so each submitted chain is compared in its own right. A
+    single-chain submission does exactly one comparison, as before.
+    """
+    best = None
+    for regions in chain_regions or []:
+        got = region_identity_vs_hits(regions, category, region_kind, hits, cache=cache)
+        if best is None or (got.get("region_identity") or -1.0) > (
+            best.get("region_identity") or -1.0
+        ):
+            best = got
+    return best if best is not None else region_identity_vs_hits(
+        {}, category, region_kind, hits, cache=cache
+    )
 
 
 def region_identity_vs_hits(
