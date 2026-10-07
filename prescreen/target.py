@@ -63,7 +63,11 @@ def _annotator_fingerprint() -> str:
 class RegionHit:
     """Best region-level match of a query against the reference set."""
 
-    identity: float
+    # ``None`` means the region arm could not run — the query's focus region would not
+    # extract, or no compatible reference existed to compare it with. That is not the same
+    # as 0.0 ("compared against real references, and different"), and a caller that reads
+    # the first as the second reports a check that never ran as a clean result.
+    identity: float | None
     reference_id: str | None
     reference_region: str | None
     query_region: str
@@ -78,7 +82,8 @@ class RegionHit:
 
     def as_dict(self) -> dict:
         return {
-            "region_identity": round(self.identity, 4),
+            "region_identity": None if self.identity is None else round(self.identity, 4),
+            "region_compared": self.identity is not None,
             "region_exact": self.exact,
             "region_reference": self.reference_id,
             "region_reference_seq": self.reference_region,
@@ -342,7 +347,11 @@ class TargetReference:
             focus = result["focus"]
             if focus is None:
                 chain, q_focus = focus_region(query_regions)
-                return RegionHit(0.0, None, None, q_focus, chain, FOCUS)
+                # No CDR of this query matched anything in the reference index. If the
+                # query had no extractable focus region at all, the arm did not run.
+                return RegionHit(
+                    None if not q_focus else 0.0, None, None, q_focus, chain, FOCUS
+                )
             return RegionHit(
                 identity=focus.identity,
                 reference_id=focus.reference_id,
@@ -362,9 +371,14 @@ class TargetReference:
         identity = identity_fn_for(category)
         chain, q_focus = focus_region(query_regions)
         if not q_focus:
-            return RegionHit(0.0, None, None, "", None, FOCUS)
+            return RegionHit(None, None, None, "", None, FOCUS)
 
         candidates = self.compatible(category, region_kind)
+        if not candidates:
+            # No reference of a comparable category exists — e.g. a monobody query when
+            # every curated monobody reference failed its own framework gate. Comparing
+            # against nothing scores 0.0, which reads as "checked and clean".
+            return RegionHit(None, None, None, q_focus, chain, FOCUS)
         hit_regions, hit_ids = [], []
         for ref_id in candidates:
             ann = self.annotations[ref_id]

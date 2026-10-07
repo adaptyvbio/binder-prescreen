@@ -122,6 +122,12 @@ def evaluate(record: dict, cfg: Config) -> dict:
     whole_fident = float(whole.get("fident") or 0.0) if whole else 0.0
     whole_qcov = float(whole.get("qcov") or 0.0) if whole else 0.0
     whole_sim = float(whole["similarity_check"]) if whole else 0.0
+    # None means the target region arm did not run at all (no extractable focus region, or
+    # no reference of a comparable category). It cannot corroborate a known-binder call,
+    # and it must not be read as a clean region either.
+    region_compared = region.get("region_compared", True) and region.get(
+        "region_identity"
+    ) is not None
     region_id = float(region.get("region_identity") or 0.0)
     region_exact = bool(region.get("region_exact"))
     region_len = len(region.get("region_query_seq") or "")
@@ -129,6 +135,13 @@ def evaluate(record: dict, cfg: Config) -> dict:
     design_sim = float(best_design["similarity_check"]) if best_design else 0.0
 
     region_matches = region_exact or region_id >= cfg.region_match
+    if region_aware and not region_compared:
+        # Surfaced as context rather than a flag: it changes no verdict, but a reviewer
+        # must not read this record's silence on the binding region as a negative result.
+        context["target_region_not_compared"] = {
+            "region_kind": region_kind,
+            "note": "no comparable reference region; whole-sequence evidence only",
+        }
     # Whole-sequence "already a known binder". For antibody and scaffold formats the
     # paratope is the binding determinant, so a known-binder call requires BOTH a high
     # whole-sequence match (identity and coverage past the measured cut) AND the binding

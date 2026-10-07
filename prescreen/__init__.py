@@ -286,7 +286,8 @@ def to_rows(screened: dict) -> list:
                 "design_hit": pa_design.get("target"),
                 "target_similarity": round(whole.get("similarity_check", 0.0), 4),
                 "target_hit": whole.get("target"),
-                "target_region_identity": region.get("region_identity", 0.0),
+                "target_region_identity": region.get("region_identity"),
+                "target_region_compared": region.get("region_compared", True),
                 "target_region_exact": region.get("region_exact", False),
                 "target_region_hit": region.get("region_reference"),
                 "target_binder_status": region.get("binder_status")
