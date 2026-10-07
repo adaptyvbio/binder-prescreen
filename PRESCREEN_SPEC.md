@@ -167,8 +167,8 @@ Pass rate by class (`calibration_table.csv`):
 | class | n | passed | reading |
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
-| mutant 2 % / 5 % | 236 | 0 % / 0 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 5 % / 18 % / 87 % | graded — a heavily rewritten binder is a new molecule |
+| mutant 2 % / 5 % | 236 | 0 % / 1 % | lightly mutated knowns still caught |
+| mutant 10 % / 20 % / 35 % | 354 | 9 % / 19 % / 92 % | graded — a heavily rewritten binder is a new molecule |
 | **grafted known CDR3** | 60 | **3 %** | 97 % of grafts onto a new framework are caught — the case whole-sequence misses |
 | **reused framework** | 60 | **58 %** | correctly passed; of the rest, 38 % flag only as in-batch duplicates and 3 % as known-binder false positives |
 | unrelated design | 80 | 0 % | **not a usable negative** — see below |
@@ -187,10 +187,17 @@ rate. A real false-positive estimate needs the sampled designs held out of the d
 or a negative set drawn from a corpus that is not searched. Until then, the shuffled control
 is the only honest negative in the set.
 
-Reading the mutant series against the earlier patent-free calibration: adding the USPTO arm
-roughly halves the pass rate of the 10 % and 20 % mutants (12 % → 5 %, 33 % → 18 %), which
-is the patent corpus catching rewritten binders that the structural and antibody databases
-miss. 639 of the 1,026 sequences take their best public hit from `uspto`.
+The patent corpus does most of the work: 645 of the 1,026 sequences take their best public
+hit from `uspto`, more than every other arm combined.
+
+**Do not read small movements in the mutant rows across runs.** Until the seed fix in
+`calibrate.py` (`_stable_seed`), the per-reference mutation seed came from `hash(ref_id)`,
+which Python salts per process, so each run mutated different residues: two consecutive
+calibrations of the same reference set differed in 522 of 1,026 rows and the mutant pass
+rates moved by up to 5 points for that reason alone. The deterministic classes — known,
+graft, framework reuse, shuffled — were reproducible throughout and are the ones to compare
+across runs. The mutant series is now reproducible too, from the first run generated after
+that fix.
 
 ### Evidence reported per flag
 

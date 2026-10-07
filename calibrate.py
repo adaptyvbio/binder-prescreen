@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import random
@@ -43,6 +44,20 @@ from prescreen.classify import classify  # noqa: E402
 from prescreen.regions import extract, focus_region  # noqa: E402
 
 MUTANT_FRACTIONS = (0.02, 0.05, 0.10, 0.20, 0.35)
+
+
+def _stable_seed(ref_id: str) -> int:
+    """A per-reference mutation seed that is the same in every process.
+
+    ``hash()`` on a str is salted by PYTHONHASHSEED, which is random per process unless
+    it is set, so seeding from it mutated different residues on every run: two
+    consecutive calibrations of the same reference set differed in 522 of 1,026 rows and
+    the mutant-series pass rates moved several points for no reason but the seed. The
+    deterministic labels (known, graft, framework_reuse, shuffled) were unaffected,
+    because those come from ``random.Random(seed)`` — which is exactly the property the
+    mutant series needs too.
+    """
+    return int.from_bytes(hashlib.sha256(ref_id.encode()).digest()[:4], "big") % 10000
 
 
 def sample_references(
@@ -108,7 +123,7 @@ def build_labelled(
             n = max(1, int(round(frac * len(seq))))
             add(
                 f"mut{int(frac * 100):02d}__{ref_id}",
-                fixtures.mutant(seq, n, seed=hash(ref_id) % 10000, protect=span),
+                fixtures.mutant(seq, n, seed=_stable_seed(ref_id), protect=span),
                 f"mutant_{int(frac * 100):02d}",
                 ref_id,
             )
