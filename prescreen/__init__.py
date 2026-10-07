@@ -354,6 +354,12 @@ def to_rows(screened: dict) -> list:
                 "design_similarity": round(pa_design.get("similarity_check", 0.0), 4),
                 "design_hit": pa_design.get("target"),
                 "target_similarity": round(whole.get("similarity_check", 0.0), 4),
+                # The known-binder rule is a conjunction of these two cuts, not a cut on
+                # the composite, so neither can be swept or falsified from the composite
+                # alone. Export both or the calibration cannot check the rule it most needs
+                # to (tnf_known_identity / tnf_known_coverage / the verbatim cuts).
+                "target_fident": round(whole.get("fident", 0.0), 4),
+                "target_qcov": round(whole.get("qcov", 0.0), 4),
                 "target_hit": whole.get("target"),
                 "target_region_identity": region.get("region_identity"),
                 "target_region_compared": region.get("region_compared", True),

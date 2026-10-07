@@ -282,6 +282,13 @@ class TargetReference:
                 row["binder_status"] = hdr.get("binder_status") or ""
                 row["named_agent"] = hdr.get("named_agent") or ""
                 row["reference_class"] = hdr.get("class") or ""
+                # Whether the CDR index holds anything for this reference's class. When it
+                # does not, the region arm cannot confirm a match against this reference,
+                # and the flag logic must not treat its silence as evidence of novelty.
+                row["region_reference_available"] = bool(
+                    self.cdrs is None
+                    or row["reference_class"] in self.cdrs.covered_classes
+                )
                 prev = best.get(row["query"])
                 if prev is None or row["similarity_check"] > prev["similarity_check"]:
                     best[row["query"]] = row

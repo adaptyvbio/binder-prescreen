@@ -89,6 +89,10 @@ class CdrReference:
         self.path = Path(csv_path)
         self.entries: list = []
         self.index: dict = {}
+        #: Curated binder classes that contributed at least one CDR. A class absent here
+        #: cannot be corroborated by this index however good the whole-sequence match is,
+        #: and a caller must not read that silence as "the paratope is new".
+        self.covered_classes: set = set()
         with self.path.open(newline="") as fh:
             for row in csv.DictReader(fh):
                 seq = (row.get("cdr_seq") or "").strip().upper()
@@ -107,6 +111,9 @@ class CdrReference:
                 )
                 self.entries.append(entry)
                 self.index.setdefault((entry.region, entry.chain), []).append(entry)
+                for parent in (row.get("parent_classes") or "").split(";"):
+                    if parent.strip():
+                        self.covered_classes.add(parent.strip())
 
     def __len__(self) -> int:
         return len(self.entries)

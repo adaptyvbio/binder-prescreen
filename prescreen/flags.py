@@ -150,10 +150,23 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # pass — reusing a published scaffold is allowed. For non-antibody formats
     # (miniprotein, peptide) the whole sequence IS the binder, so the composite suffices.
     if region_aware:
+        # Requiring the region to corroborate is right when the region arm had a fair
+        # chance to. It did not when the matched reference's class contributes no CDRs to
+        # the index at all — vnar, other and designed_other contribute none — so a
+        # byte-identical resubmission of such a binder scored 0.0-0.4 on the region and
+        # could not be called a known binder. That is the arm having nothing to say, not
+        # evidence of a new paratope.
+        #
+        # Deliberately NOT an identity cut: a framework-reuse chimera swaps one CDR3, which
+        # in a 432-aa Fab still leaves 97% identity, so any fixed identity threshold high
+        # enough to mean "verbatim" for a nanobody flags legitimate reuse in a Fab.
+        uncorroborable = whole is not None and not whole.get(
+            "region_reference_available", True
+        )
         known_binder = (
             whole_fident >= cfg.tnf_known_identity
             and whole_qcov >= cfg.tnf_known_coverage
-            and region_matches
+            and (region_matches or uncorroborable)
         )
     else:
         known_binder = whole_sim >= cfg.tnf_known
@@ -166,6 +179,11 @@ def evaluate(record: dict, cfg: Config) -> dict:
             "similarity_check": round(whole_sim, 4),
             "binder_status": whole.get("binder_status"),
             "named_agent": whole.get("named_agent"),
+            # False when the flag rests on the whole-sequence match alone because the
+            # matched reference's class contributes no CDRs to the index. The finding is
+            # real but uncorroborated, and a reviewer should see which it is.
+            "paratope_corroborated": bool(region_matches),
+            "reference_class": whole.get("reference_class"),
         }
     # Known anti-target paratope on any framework: exact CDR3 match, or CDR3 identity at
     # or above region_match on a matching chain. Only for region-bearing categories; for a
@@ -242,19 +260,27 @@ def evaluate(record: dict, cfg: Config) -> dict:
             # The framework is public but the paratope is not: exactly the case these
             # competitions permit, so it is context and never a flag.
             context["known_framework_new_paratope"] = evidence
-    if cfg.tnf_homolog <= whole_sim < cfg.tnf_known:
+    if whole and whole_sim >= cfg.tnf_homolog:
         evidence = {
             "reference": whole["target"],
             "similarity_check": round(whole_sim, 4),
             "region_identity": round(region_id, 4) if region_aware else None,
         }
         if not region_aware:
-            flags.append("target_binder_homolog")
-            reasons["target_binder_homolog"] = evidence
-        elif region_id < cfg.region_match:
+            # A band, deliberately: above tnf_known the whole-sequence rule already fired.
+            if whole_sim < cfg.tnf_known:
+                flags.append("target_binder_homolog")
+                reasons["target_binder_homolog"] = evidence
+        elif region_id < cfg.region_match and "known_target_binder" not in flags:
             # Framework-dominated category, similar overall to a known binder but with a
             # different binding region: scaffold reuse, which is allowed. When the region
             # *does* match, target_region_match above already carries the finding.
+            #
+            # No upper bound here. Bounding it at tnf_known assumed anything above that cut
+            # would be caught by known_target_binder, but that flag also needs the region to
+            # match — so a submission 90%+ identical to a known binder with an unmatched
+            # region fell out of both rules and the target arm said nothing at all. The
+            # report went quiet exactly where it should be loudest.
             context["shared_framework_with_target_binder"] = evidence
     if cfg.near_known_sequence <= pa_sim < cfg.known_sequence:
         evidence = {

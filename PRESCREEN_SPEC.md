@@ -77,6 +77,17 @@ Rank order (most to least disqualifying):
 | 9 | `no_reference_signal` | no hit on either arm, at a length where k-mer search is unreliable (< 25 aa) | — |
 | 10 | `pass` | none of the above | — |
 
+**One exception, and why.** The CDR reference index is built only from the classes that
+contributed CDRs — `fv_domain_vh/vl`, `vhh`, `vhh_putative`, `igg_chain_heavy/light`, `fab`,
+`igg_fv`. A curated binder of any other class (`vnar`, `other`, `designed_other`,
+`receptor_derived`) has **no CDRs in it at all**, so the region arm cannot corroborate a
+match against such a reference however good the whole-sequence match is. Requiring
+corroboration there meant a byte-identical resubmission of, say, the curated VNAR scored
+0.40 on the region and was never called a known binder. When the matched reference's class
+is absent from the index, the whole-sequence rule therefore stands on its own, and the
+evidence records `paratope_corroborated: false` so the finding is not mistaken for a
+confirmed one.
+
 ### The governing rule: antibody formats are judged on the paratope
 
 For antibody and scaffold formats the framework is most of the sequence, and the
