@@ -98,11 +98,13 @@ class CdrReference:
                 seq = (row.get("cdr_seq") or "").strip().upper()
                 if not seq:
                     continue
+                raw_region = (row.get("cdr_region") or "").lower()
+                raw_chain = (row.get("chain_type") or "").upper()
                 entry = CdrEntry(
                     cdr_id=row.get("cdr_id") or "",
                     seq=seq,
-                    region=(row.get("cdr_region") or "").lower(),
-                    chain=CANONICAL_CHAIN.get((row.get("chain_type") or "").upper(), "H"),
+                    region=raw_region,
+                    chain="*" if raw_chain == "*" else CANONICAL_CHAIN.get(raw_chain, "H"),
                     status=row.get("best_status") or "",
                     agents=row.get("named_agents") or "",
                     n_parents=int(float(row.get("n_parent_sequences") or 1)),
@@ -137,7 +139,15 @@ class CdrReference:
         if len(query_seq) < min_length:
             return best
         chain = CANONICAL_CHAIN.get(chain or "H", "H")
-        for entry in self.index.get((region, chain), ()):
+        # Wildcard entries are bare claimed loops with no parent chain, so they are
+        # consulted for any region on any chain: a patent-claimed binding region is prior
+        # art wherever it reappears, not only at the position it was first described in.
+        candidates = [
+            *self.index.get((region, chain), ()),
+            *self.index.get((region, "*"), ()),
+            *self.index.get(("*", "*"), ()),
+        ]
+        for entry in candidates:
             if entry.seq == query_seq or (
                 entry.ambiguous and _wildcard_equal(query_seq, entry.seq)
             ):

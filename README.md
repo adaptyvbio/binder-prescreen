@@ -221,7 +221,7 @@ clean result. What the verdicts mean stays here and in `PRESCREEN_SPEC.md`.
 
 `prescreen/data/` ships the curated TNF-α set: **4,964** unique known or claimed binders
 with per-entry provenance — 28 confirmed binders, 4,901 patent/document-level claims, 35
-Proteinbase designs tested and found *not* to bind — plus **2,506** deduplicated anti-TNF
+Proteinbase designs tested and found *not* to bind — plus **4,075** deduplicated anti-TNF
 IMGT CDRs as the paratope reference. By primary source: USPTO patents (4,423), PLAbDab
 incl. Thera-SAbDab (479), Proteinbase (35), PDB (25, all contact-verified against P01375),
 UniProt (1), THPdb (1). Named agents are resolved for adalimumab, infliximab,

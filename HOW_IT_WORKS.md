@@ -81,7 +81,7 @@ Ordered from most to least disqualifying (the verdict is the first that fires):
 
 4,964 unique known or claimed TNF-α binders, each with traceable provenance: 28 confirmed
 binders, 35 designs tested and found not to bind, and 4,901 patent/document-level claims.
-Plus 2,506 deduplicated anti-TNF CDRs as the paratope reference. By format:
+Plus 4,075 deduplicated anti-TNF binding regions as the paratope reference. By format:
 
 | category | n | what it is |
 |----------|---|-----------|

@@ -77,16 +77,20 @@ Rank order (most to least disqualifying):
 | 9 | `no_reference_signal` | no hit on either arm, at a length where k-mer search is unreliable (< 25 aa) | — |
 | 10 | `pass` | none of the above | — |
 
-**One exception, and why.** The CDR reference index is built only from the classes that
-contributed CDRs — `fv_domain_vh/vl`, `vhh`, `vhh_putative`, `igg_chain_heavy/light`, `fab`,
-`igg_fv`. A curated binder of any other class (`vnar`, `other`, `designed_other`,
-`receptor_derived`) has **no CDRs in it at all**, so the region arm cannot corroborate a
-match against such a reference however good the whole-sequence match is. Requiring
-corroboration there meant a byte-identical resubmission of, say, the curated VNAR scored
-0.40 on the region and was never called a known binder. When the matched reference's class
-is absent from the index, the whole-sequence rule therefore stands on its own, and the
-evidence records `paratope_corroborated: false` so the finding is not mistaken for a
-confirmed one.
+**Index coverage is a correctness property, not a detail.** The region arm compares a
+submission's CDR3 against this index and nothing else, so a binding region missing from it
+cannot be recognised however exactly it is copied — the arm reports a low identity because
+it has nothing to match, and that silence reads as "the paratope is new". The index
+originally held only the conventional antibody classes, leaving 1,609 curated binding
+regions unrepresented, 1,554 of them `peptide_or_cdr` entries that *are* claimed loops.
+`scripts/build/augment_binder_cdrs.py` adds them: bare loops with no parent chain are
+indexed as wildcard entries matching any region on any chain, which is the right semantics
+for a claimed loop (it is prior art wherever it reappears), and length-normalised identity
+keeps that honest since a 40-aa entry cannot score highly against a 14-aa CDR3.
+
+Where a class still contributes no CDRs, a whole-sequence match to it cannot be
+corroborated, so the known-binder rule stands on the whole-sequence evidence alone and the
+evidence records `paratope_corroborated: false`.
 
 ### The governing rule: antibody formats are judged on the paratope
 
@@ -118,7 +122,7 @@ therefore mark almost every antibody-format submission as a known TNF binder.
 
 The fix is to compare the **binding region** independently:
 
-- **Antibody formats** → the submission's CDRs vs. 2,506 deduplicated known anti-TNF IMGT
+- **Antibody formats** → the submission's CDRs vs. 4,075 deduplicated known anti-TNF IMGT
   CDRs (`tnfa_binder_cdrs.csv`), matched by chain type, exact-first then Levenshtein.
   CDR1/CDR2 are germline-shared and only corroborate; the CDR3 is the determinant.
 - **Alternative scaffolds** → projected paratope vs. same-class references.
