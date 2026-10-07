@@ -192,16 +192,25 @@ Pass rate by class (`calibration_table.csv`):
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
 | mutant 2 % / 5 % | 236 | 0 % / 1 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 9 % / 19 % / 92 % | graded — a heavily rewritten binder is a new molecule |
-| **grafted known CDR3** | 60 | **3 %** | 97 % of grafts onto a new framework are caught — the case whole-sequence misses |
-| **reused framework** | 60 | **58 %** | correctly passed; of the rest, 38 % flag only as in-batch duplicates and 3 % as known-binder false positives |
+| mutant 10 % / 20 % / 35 % | 354 | 5 % / 23 % / 94 % | graded — a heavily rewritten binder is a new molecule |
+| **grafted known CDR3** | 60 | **0 %** | every graft onto a new framework is caught — the case whole-sequence misses |
+| **reused framework** | 60 | **57 %** | correctly passed; a further 35 % flag only as in-batch duplicates. The remaining 5 are a fixture limitation, not a filter error — see below |
 | unrelated design | 80 | 0 % | **not a usable negative** — see below |
 | shuffled control | 118 | 98 % | composition-matched negative |
 
 The binding-region arm is the separator: region identity to the nearest known binder has
-median **1.00 for grafts** (known paratope present) versus **0.39 for reused frameworks**
-and **0.27 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 93 % of
-grafts fall above it, 3 % of framework-reuse and 2 % of unrelated cases do.
+median **1.00 for grafts** (known paratope present) versus **0.44 for reused frameworks**
+and **0.27 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 97 % of
+grafts fall above it, 8 % of framework-reuse and 2 % of unrelated cases do.
+
+**The five flagged framework-reuse rows are a fixture limitation.** Every one of them has
+`fident = 1.00`, `qcov = 1.00` and region identity 1.00 against a curated binder, and every
+one is built on a multi-domain host — three bivalent, one trivalent, one carrying four
+variable domains. `fixtures.focus_span` returns only the H-chain CDR3, so the chimera scrambles
+one paratope and leaves the others verbatim; the construct still *contains* an intact known
+binder and the filter is right to say so. They are the same 8 % that sit above the 0.80
+region cut. Until the fixture scrambles every domain, this class carries no false-positive
+rate — the number it would yield is a property of the fixture, not of the filter.
 
 **The unrelated-design row measures nothing.** `calibrate.py` draws it from the published
 Proteinbase designs, which is also the `proteinbase_public` arm, so all 80 match themselves
@@ -211,7 +220,7 @@ rate. A real false-positive estimate needs the sampled designs held out of the d
 or a negative set drawn from a corpus that is not searched. Until then, the shuffled control
 is the only honest negative in the set.
 
-The patent corpus does most of the work: 645 of the 1,026 sequences take their best public
+The patent corpus does most of the work: 630 of the 1,026 sequences take their best public
 hit from `uspto`, more than every other arm combined.
 
 **Do not read small movements in the mutant rows across runs.** Until the seed fix in
