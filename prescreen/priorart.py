@@ -1,22 +1,18 @@
 """The prior-art arm: is this sequence already public, and where.
 
 The search itself is delegated to :mod:`prescreen.refdb`, the reference-database layer,
-which resolves the nine arms (``pdb``, ``swissprot``, ``plabdab``, ``plabdab_nano``,
-``therasabdab``, ``thpdb``, ``proteinbase_public``, ``proteinbase_internal``, ``uspto``),
-routes every query by length into a tuned parameter set, and raises before searching if
-an arm is absent — because a missing database reads exactly like a sequence with no prior
-art, which is the one answer this filter must never give by accident.
+which resolves the eight arms (``pdb``, ``swissprot``, ``plabdab``, ``plabdab_nano``,
+``therasabdab``, ``thpdb``, ``proteinbase_public``, ``uspto``), routes every query by
+length into a tuned parameter set, and raises before searching if an arm is absent —
+because a missing database reads exactly like a sequence with no prior art, which is the
+one answer this filter must never give by accident.
 
-This module adds the three things the prescreen needs on top of a hit list:
+This module adds the two things the prescreen needs on top of a hit list:
 
-1. **Visibility discipline.** ``proteinbase_internal`` holds other entrants' unpublished
-   submissions. It may raise an internal duplicate flag for the organisers and must never
-   appear as evidence shown to a competitor; it is excluded unless
-   ``Config.organiser_mode`` is set.
-2. **A separate design channel.** A hit among published designs
+1. **A separate design channel.** A hit among published designs
    (``proteinbase_public``) is a different finding from a hit in SwissProt or a patent,
    so it is reported on its own.
-3. **A paratope-aware check.** Each hit comes back with its own sequence (``tseq``), so
+2. **A paratope-aware check.** Each hit comes back with its own sequence (``tseq``), so
    the hit can be re-numbered and its binding region compared with the query's. Without
    this, every designed nanobody built on a published framework looks like prior art.
 
@@ -35,16 +31,15 @@ from .config import Config
 
 
 def arms_for(cfg: Config) -> list:
-    """Arms to search: public arms, minus the patent arm unless asked for.
+    """Arms to search: every public arm, the patent arm included.
 
-    The patent arm is 10.2M sequences and costs seconds per query, so it belongs in an
-    asynchronous batch rather than the submission path. ``proteinbase_internal`` is added
-    only in organiser mode.
+    The patent arm is 10.2M sequences and costs seconds per query, but a prior-art screen
+    that cannot see patents is not a prior-art screen: a binder claimed in a granted patent
+    and never deposited anywhere else is invisible without it. The cost is amortised over
+    the batch, which is why submissions are screened in one pass rather than one at a time.
+    ``Config.include_patent_arm = False`` (``--no-patent``) drops it.
     """
-    arms = [a for a in refdb.PUBLIC_ARMS if a != "uspto" or cfg.include_patent_arm]
-    if cfg.organiser_mode and "proteinbase_internal" in refdb.ARMS:
-        arms.append("proteinbase_internal")
-    return arms
+    return [a for a in refdb.PUBLIC_ARMS if a != "uspto" or cfg.include_patent_arm]
 
 
 def search(

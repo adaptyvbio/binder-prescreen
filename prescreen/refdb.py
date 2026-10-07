@@ -154,11 +154,6 @@ ARMS: dict[str, Arm] = {a.name: a for a in [
     Arm("proteinbase_public", "designs", "public",
         source="proteinbase.com public API (/api/proteins); scripts/build_reference_dbs.sh builds this arm",
         note="published designs from earlier rounds - the designed-binder prior art"),
-    Arm("proteinbase_internal", "designs", "internal",
-        subdir="proteinbase", db="proteinbase",
-        source="unpublished designs; not built by scripts/build_reference_dbs.sh",
-        note="NOT public prior art. Use only for an internal-duplicate flag, never "
-             "to tell a competitor their sequence is 'already known'"),
     Arm("uspto", "patent", "public",
         source="https://ftp.ebi.ac.uk/pub/databases/patentdata/uspto_prt.dat.gz",
         note="patent protein sequences; createdb must be run on a FASTA conversion, "

@@ -17,19 +17,47 @@ from . import Config, mmseqs, screen, to_rows
 from .flags import FLAG_ORDER
 
 
-def _read_submissions(path: Path, id_column: str, sequence_column: str) -> dict:
-    if path.suffix.lower() in (".csv", ".tsv"):
-        delim = "\t" if path.suffix.lower() == ".tsv" else ","
-        records = {}
-        with path.open(newline="") as fh:
-            for i, row in enumerate(csv.DictReader(fh, delimiter=delim)):
-                seq = (row.get(sequence_column) or "").strip()
-                if not seq:
-                    continue
-                key = (row.get(id_column) or f"row{i + 1}").strip()
-                records[key] = seq
-        return records
-    return mmseqs.read_fasta(path)
+def _read_submissions(
+    path: Path, id_column: str, sequence_column: str, class_column: str
+) -> tuple[dict, dict]:
+    """Read submissions, returning ``({id: sequence}, {id: declared_class})``.
+
+    CSV follows the Proteinbase competition template
+    (https://proteinbase.com/templates/competition-submission-template.csv):
+    ``name,sequence,molecule_class``, with the chains of a multi-chain entry joined by
+    ``:``. A legacy ``id`` column is still accepted. ``molecule_class`` is optional and
+    is only cross-checked against the classifier, never trusted in its place.
+    """
+    if path.suffix.lower() not in (".csv", ".tsv"):
+        return mmseqs.read_fasta(path), {}
+
+    delim = "\t" if path.suffix.lower() == ".tsv" else ","
+    records: dict = {}
+    declared: dict = {}
+    with path.open(newline="") as fh:
+        for i, row in enumerate(csv.DictReader(fh, delimiter=delim)):
+            seq = (row.get(sequence_column) or "").strip()
+            if not seq:
+                continue
+            # The template names the column "name"; accept "id" so a CSV written against
+            # the older convention still runs.
+            key = ""
+            for col in (id_column, "name", "id"):
+                key = (row.get(col) or "").strip()
+                if key:
+                    break
+            key = key or f"row{i + 1}"
+            if key in records:
+                # Silently overwriting would drop a submission from the report without
+                # anyone noticing it was ever screened.
+                raise click.ClickException(
+                    f"duplicate submission name {key!r} in {path} (row {i + 2})"
+                )
+            records[key] = seq
+            cls = (row.get(class_column) or "").strip()
+            if cls:
+                declared[key] = cls
+    return records, declared
 
 
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
@@ -61,22 +89,22 @@ def _read_submissions(path: Path, id_column: str, sequence_column: str) -> dict:
     help="Run only the target-binder arm (no public database search).",
 )
 @click.option(
-    "--patent",
-    "include_patent_arm",
+    "--no-patent",
+    "skip_patent_arm",
     is_flag=True,
-    help="Also search the USPTO patent arm (10.2M sequences; ~6-7 min per batch, "
-    "amortised over all queries — an asynchronous batch, not the fast submission path).",
-)
-@click.option(
-    "--organiser",
-    "organiser_mode",
-    is_flag=True,
-    help="Search the internal Proteinbase corpus too. Organiser use only — its hits "
-    "are other entrants' unpublished work and must never be shown to a competitor.",
+    help="Skip the USPTO patent arm (10.2M sequences; ~6-7 min per batch, amortised over "
+    "all queries). Searched by default — without it, a binder claimed only in a patent "
+    "is invisible.",
 )
 @click.option("--threads", default=0, type=int, help="MMseqs2 threads (0 = auto).")
-@click.option("--id-column", default="id", help="CSV id column.")
+@click.option("--id-column", default="name", help="CSV id column.")
 @click.option("--sequence-column", default="sequence", help="CSV sequence column.")
+@click.option(
+    "--class-column",
+    default="molecule_class",
+    help="CSV column holding the submitter's declared molecule class; cross-checked "
+    "against the classifier, never used in its place.",
+)
 @click.option(
     "--flagged-only", is_flag=True, help="Write only submissions whose verdict is not 'pass'."
 )
@@ -87,15 +115,21 @@ def main(
     output: Path,
     db_root: str | None,
     skip_prior_art: bool,
-    include_patent_arm: bool,
-    organiser_mode: bool,
+    skip_patent_arm: bool,
     threads: int,
     id_column: str,
     sequence_column: str,
+    class_column: str,
     flagged_only: bool,
 ) -> None:
-    """Screen SUBMISSIONS (FASTA or CSV) against prior art and known target binders."""
-    records = _read_submissions(submissions, id_column, sequence_column)
+    """Screen SUBMISSIONS against prior art and known target binders.
+
+    SUBMISSIONS is a FASTA file, or a CSV in the Proteinbase competition template format
+    (name,sequence,molecule_class; chains of a multi-chain entry joined by ":").
+    """
+    records, declared = _read_submissions(
+        submissions, id_column, sequence_column, class_column
+    )
     if not records:
         click.echo("no sequences read", err=True)
         sys.exit(1)
@@ -104,8 +138,9 @@ def main(
     if db_root:
         cfg.db_root = db_root
     cfg.threads = threads
-    cfg.include_patent_arm = include_patent_arm
-    cfg.organiser_mode = organiser_mode
+    # Only override the config when the flag was actually given, so the env var survives.
+    if skip_patent_arm:
+        cfg.include_patent_arm = False
 
     output.mkdir(parents=True, exist_ok=True)
     screened = screen(
@@ -115,6 +150,7 @@ def main(
         target_metadata=target_metadata,
         workdir=output / "work",
         skip_prior_art=skip_prior_art,
+        declared=declared,
     )
 
     rows = to_rows(screened)

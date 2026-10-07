@@ -6,7 +6,7 @@ when a submission arrives:
 
 1. **Is this sequence already public prior art?** Batched MMseqs2 search against PDB,
    SwissProt, PLAbDab (+ PLAbDab-nano for single-domain formats), Thera-SAbDab, THPdb,
-   the Proteinbase design corpus, and — off the submission path — USPTO patents.
+   the Proteinbase design corpus, and 10.2 M USPTO patent sequences.
 2. **Is it a known binder of the target, or does it carry a known binding region?**
    Whole-sequence search against a curated known-binder set, plus a framework-independent
    comparison of the binding region (antibody CDR3, projected scaffold paratope) against
@@ -69,10 +69,9 @@ prescreen submissions.fasta -o report/              # FASTA or CSV in; report.cs
 prescreen submissions.csv -o report/ --flagged-only
 ```
 
-Patent search (slow, 10.2 M sequences) is off by default; enable with
-`Config(include_patent_arm=True)` for an asynchronous batch. The internal Proteinbase
-corpus (other entrants' unpublished work) is searched only in
-`Config(organiser_mode=True)` and is **never** reported to a competitor.
+The USPTO patent arm (10.2 M sequences) is searched on every run: a prior-art screen
+that skips patents is not a prior-art screen. It costs seconds per query, amortised over
+the batch; `--no-patent` (or `Config(include_patent_arm=False)`) turns it off.
 
 ## Verdicts
 

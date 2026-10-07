@@ -1,11 +1,13 @@
 # TNF-α binder prescreen
 
 A sequence-level prior-art and known-binder filter for protein-design binder
-competitions. Given a submitted sequence it answers two questions, from sequence alone:
+competitions. 
+
+Given a submitted sequence it answers two questions, from sequence alone:
 
 1. **Is this already public?** MMseqs2 against PDB, SwissProt, PLAbDab (+ PLAbDab-nano
    for single-domain formats), Thera-SAbDab, THPdb, the published Proteinbase designs,
-   and — off the fast path — 10.2 M USPTO patent sequences.
+   and 10.2 M USPTO patent sequences.
 2. **Is it a known TNF-α binder?** Whole-sequence *and* **binding-region** comparison
    against a curated set of 4,964 known or claimed anti-TNF binders that ships with the
    package.
@@ -13,16 +15,13 @@ competitions. Given a submitted sequence it answers two questions, from sequence
 It deliberately does **not** judge whether the scaffold is de novo. Reusing a published
 framework is allowed in these competitions, so the molecule category (nanobody, Fab, IgG,
 affibody, monobody, DARPin, miniprotein, peptide) is used only to decide which binding
-region to compare.
+region to compare. Novelty will be computed on ProteinBase using the criteria outlined [here](https://adaptyvbio.com/blog/novelty).
 
 ## Why the binding region is compared separately
 
 Antibodies are most of the known anti-TNF corpus and nearly all share the same germline
-framework. Measured on the reference set, a single probe VHH matches **1,843 of ~5,000
-entries** at ≥0.80 coverage and 647 of them at ≥0.70 identity — all framework background,
-with only 15 genuine near-identical hits. So "is this similar to a known binder over its
-whole length?" answers *yes* for almost any antibody-format design, whether or not it
-shares the actual binding site.
+framework. Measured on the reference set, a randomly sampled VHH matches **1,843 of ~5,000
+entries** at ≥0.80 coverage and 647 of them at ≥0.70 identity. For antibodies and other molecules with designable paratope and rigid framework we need a different search. 
 
 Comparing the paratope independently fixes both error directions:
 
@@ -81,30 +80,11 @@ export PRESCREEN_DB_ROOT=~/prescreen-dbs
 ```
 
 Needs only `mmseqs`, `curl`, `python3` and network access — **no credentials for any
-arm**. Each arm lands at `<root>/<arm>/<arm>` as an MMseqs2 database, which is the layout
-`prescreen.refdb.resolve()` expects. Arms are built cheapest first, an arm that is already
-built is skipped (so an interrupted run resumes, and `FORCE=1` rebuilds), and the 3.4 GB
-patent download resumes rather than restarting.
+arm**. `uspto` is by far the largest arm (~42 min to build, 1.7 GB of the 4.6 GB total);
+`SKIP_USPTO=1` leaves it out, at the cost of a screen that cannot see patent claims. Each arm lands at `<root>/<arm>/<arm>` as an MMseqs2 database, which is the layout
+`prescreen.refdb.resolve()` expects.
 
-Every arm is also **indexed** (`mmseqs createindex`). This is what makes the patent arm
-usable: the same 4-sequence `--patent` batch takes **2m17s indexed against 13m17s without**,
-for identical verdicts. On the `uspto` arm alone a single query goes from 4m19s to 43s; the
-smaller arms roughly halve.
-
-**It is expensive in disk.** The index carries ~860 MB of fixed overhead *per arm*, so a
-112 KB arm becomes 859 MB, and it grows faster than the database: the whole set is **55 GB
-indexed against 4.6 GB without**. Budget accordingly, or pass `SKIP_INDEX=1` and accept
-slower searches. `INDEX_MEMORY=4G` raises the memory each index build may use (default 2G);
-an arm built by an earlier run without an index is indexed in place on the next run rather
-than rebuilt.
-
-Each arm comes from a different third-party host, and any of them can be down on the day.
-A failed arm is logged and the run carries on with the rest; the summary at the end names
-what is missing, prints the command to retry just those arms, and exits non-zero. Nothing
-is left half-built: an arm that failed does not look finished to the next run.
-
-Counts and sizes measured on a build from scratch on 2026-10-07; the upstream sources move,
-so treat them as the order of magnitude rather than a contract.
+Every arm is also **indexed** (`mmseqs createindex`). This is much faster but requires a significant amount of disk space.
 
 | arm | entries | database | + index | source |
 |---|---|---|---|---|
@@ -118,42 +98,45 @@ so treat them as the order of magnitude rather than a contract.
 | `uspto` | 11,173,221 | 2.8 GB | 33 GB | USPTO patent sequences |
 | **total** | | **4.6 GB** | **55 GB** | |
 
-Everything except `uspto` builds in a couple of minutes on a fast connection — PDB and
-SwissProt come down as prebuilt MMseqs2 databases rather than being built locally. `uspto`
-is the one that costs: a ~3.4 GB download that unpacks to ~9.3 GB, then the conversion and
-`createdb`. Measured end to end at **42 minutes**, plus another 10 for its index.
-It is in the default arm list, so a plain run builds it; `SKIP_USPTO=1` leaves a set that
-covers everything but patents (1.7 GB of database, 14 GB indexed).
-
-`thpdb` comes from the [Figshare deposit](https://figshare.com/articles/dataset/5198005)
-rather than the THPdb web host, which is frequently unreachable. That deposit is a TSV, and
-multi-chain therapeutics pack every chain into one cell, so `scripts/build/thpdb_to_fasta.py`
-splits them apart — 162 distinct chains across 163 therapeutics. The other 76 THPdb entries
-carry no one-letter sequence upstream (`N.A.`, or three-letter notation).
-
-Having the patent database on disk is not the same as searching it. The patent arm is off
-the *query* path by default. On an indexed root a 4-sequence batch takes 2m17s with
-`--patent` against ~70 s without — the patent arm is still 130 s of the 137. Unindexed the
-same batch takes 13m17s, which is what the index is for.
-
-Every arm is verified **by a real search, not by file presence**, before the script calls
-it done. That check exists because `mmseqs createdb` reports success on a file it could not
-parse: the EBI patent dump is an EMBL-style flat file with no FASTA parser, and ingesting
-it directly yields a database holding exactly one record that silently matches nothing.
 
 ## The full screen
 
 ```bash
 export PRESCREEN_DB_ROOT=~/prescreen-dbs
 uv run prescreen examples/submissions.fasta -o report/
-uv run prescreen submissions.csv --id-column id --sequence-column sequence -o report/
-uv run prescreen submissions.fasta --patent -o report/        # + the USPTO arm
+uv run prescreen examples/submissions.csv -o report/
+uv run prescreen examples/submissions.csv --no-patent -o report/   # without the USPTO arm
 ```
 
-~72 s for 4 sequences across the seven public non-patent arms; ~17 s if only the four
-small arms are built. The search is **batched** — one MMseqs2 call per database for the
-whole input file — so database load dominates and N sequences cost about what one does.
-Submit your whole batch at once rather than looping.
+Every arm, the USPTO patent arm included, is searched on every run: a binder claimed in a
+granted patent and deposited nowhere else is invisible without it. It is the slow arm
+(10.2 M sequences, ~6–7 min per batch), and the cost is amortised over the whole batch —
+which is the reason to submit a batch rather than one sequence at a time. `--no-patent`
+drops it.
+
+### Input format
+
+CSV follows the [Proteinbase competition submission
+template](https://proteinbase.com/templates/competition-submission-template.csv):
+
+```csv
+name,sequence,molecule_class
+my-nanobody,QVQLVESGGGLVQAGGSLRLSCAAS...,nanobody
+my-fab,EVQLVESGGG...VTVSS:DIQMTQSP...KVEIK,fab_kappa
+```
+
+- `name` — the submission id. Duplicates are rejected rather than silently overwritten.
+- `sequence` — chains of a multi-chain entry are joined by `:`. They are concatenated
+  before screening, with no linker inserted, so a Fab still classifies as a Fab and not
+  as an scFv.
+- `molecule_class` — optional, and **cross-checked, never trusted**: the classifier still
+  decides which region is compared, and a disagreement is reported as
+  `declared_class_match=mismatch` instead of changing the comparison. A declaration the
+  classifier does not know is reported as `unknown`.
+
+Plain FASTA still works, and `--id-column` / `--sequence-column` / `--class-column`
+override the column names for a CSV written to a different convention.
+
 
 `PRESCREEN_DB_ROOT` takes a `:`-separated list, first match wins, so a big shared mount
 and a few locally built arms can be mixed:

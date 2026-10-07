@@ -36,7 +36,7 @@ from pathlib import Path
 from . import cluster as _cluster
 from . import flags as _flags
 from . import mmseqs, priorart
-from .classify import classify
+from .classify import classify, compare_declared
 from .config import Config, resolve_db_root
 from .regions import extract, focus_region
 from .target import TargetReference
@@ -47,6 +47,7 @@ __all__ = [
     "screen",
     "screen_fasta",
     "classify",
+    "compare_declared",
     "resolve_db_root",
     "__version__",
 ]
@@ -54,8 +55,10 @@ __all__ = [
 __version__ = "0.1.0"
 
 
-def _annotate(records: dict) -> dict:
+def _annotate(records: dict, declared: dict | None = None, chains: dict | None = None) -> dict:
     """Classify and region-annotate a batch of submissions."""
+    declared = declared or {}
+    chains = chains or {}
     out: dict = {}
     for qid, seq in records.items():
         cl = classify(seq)
@@ -70,6 +73,9 @@ def _annotate(records: dict) -> dict:
             "regions": regions,
             "focus_chain": chain,
             "focus_region": focus,
+            "n_chains": chains.get(qid, 1),
+            "declared_class": declared.get(qid),
+            "declared_class_match": compare_declared(declared.get(qid), cl.category),
         }
     return out
 
@@ -81,11 +87,15 @@ def screen(
     target_metadata: str | Path | None = None,
     workdir: str | Path | None = None,
     skip_prior_art: bool = False,
+    declared: dict | None = None,
 ) -> dict:
     """Screen a batch of submitted sequences.
 
     Args:
-        records: ``{submission_id: sequence}``.
+        records: ``{submission_id: sequence}``. A multi-chain submission joins its
+            chains with ``:``, as in the Proteinbase submission template; the chains are
+            concatenated before screening (no linker is inserted, so a Fab still
+            classifies as a Fab rather than as an scFv).
         cfg: thresholds and database locations; ``Config.from_env()`` if omitted.
         target_fasta: curated known-binder FASTA for the target. Defaults to
             ``cfg.target_fasta`` or the packaged ``data/tnfa_binders.fasta``.
@@ -93,6 +103,9 @@ def screen(
         workdir: scratch directory; a temporary one is used if omitted.
         skip_prior_art: run only the target arm (useful when the public databases are not
             mounted, e.g. in a unit test).
+        declared: optional ``{submission_id: molecule_class}`` as declared by the
+            submitter. Cross-checked against the classifier and reported; never used in
+            its place.
 
     Returns:
         ``{"results": {id: record}, "timing": {...}, "config": {...}, "target": {...}}``
@@ -101,7 +114,15 @@ def screen(
     cfg = cfg or Config.from_env()
     if cfg.db_root is None:
         cfg.db_root = resolve_db_root()
-    records = {k: v.strip().upper().replace("*", "") for k, v in records.items() if v}
+    # ``:`` separates the chains of a multi-chain submission. Concatenate without a
+    # linker: classify() already recognises a paired H+L inside one string, whereas an
+    # inserted GGGGS would make every paired entry look like an scFv.
+    chain_counts = {k: v.count(":") + 1 for k, v in records.items() if v}
+    records = {
+        k: v.strip().upper().replace("*", "").replace(":", "")
+        for k, v in records.items()
+        if v
+    }
     if not records:
         return {"results": {}, "timing": {}, "config": cfg.as_dict(), "target": {}}
 
@@ -114,7 +135,7 @@ def screen(
 
     timing: dict = {}
     t = time.time()
-    annotations = _annotate(records)
+    annotations = _annotate(records, declared, chain_counts)
     timing["classify_regions"] = round(time.time() - t, 2)
 
     data_dir = Path(__file__).parent / "data"
@@ -189,6 +210,9 @@ def screen(
             "category_evidence": ann["category_evidence"],
             "focus_chain": ann["focus_chain"],
             "focus_region": ann["focus_region"],
+            "n_chains": ann["n_chains"],
+            "declared_class": ann["declared_class"],
+            "declared_class_match": ann["declared_class_match"],
             "prior_art": prior.get(qid, {}),
             "target": {
                 "whole": target_whole.get(qid),
@@ -236,6 +260,9 @@ def to_rows(screened: dict) -> list:
                 "length": rec["length"],
                 "category": rec["category"],
                 "category_confidence": rec["category_confidence"],
+                "declared_class": rec["declared_class"],
+                "declared_class_match": rec["declared_class_match"],
+                "n_chains": rec["n_chains"],
                 "verdict": rec["verdict"],
                 "flags": ";".join(rec["flags"]),
                 "context": ";".join(rec.get("context") or {}),

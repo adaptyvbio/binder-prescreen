@@ -55,7 +55,8 @@ export PRESCREEN_DB_ROOT=~/prescreen-dbs
 ```
 
 No credentials for any arm. Everything except `uspto` is ~1.7 GB of database and a couple of
-minutes on a fast connection; `uspto` is the expensive one. Arms are also indexed by
+minutes on a fast connection; `uspto` is the expensive one — and it is searched on every run,
+so build it unless you are deliberately running without patent coverage. Arms are also indexed by
 default: that is a 6x speedup on the patent arm (4m19s to 43s for one query) and about 2x
 elsewhere, but it takes the full set from 4.6 GB to **55 GB** on disk. Pass `SKIP_INDEX=1`
 if space is tight and slower searches are acceptable. An arm that is already built is skipped, so
@@ -75,10 +76,17 @@ few locally built arms can be mixed.
 ```bash
 uv run prescreen submissions.fasta -o report/
 uv run prescreen submissions.fasta --skip-prior-art -o report/
-uv run prescreen submissions.csv --id-column id --sequence-column sequence -o report/
-uv run prescreen submissions.fasta --patent -o report/        # + the USPTO arm, seconds per query
+uv run prescreen submissions.csv -o report/                   # Proteinbase template CSV
+uv run prescreen submissions.fasta --no-patent -o report/     # drop the USPTO arm
 uv run prescreen submissions.fasta -o report/ --flagged-only  # drop the passes from report.csv
 ```
+
+CSV input follows the [Proteinbase submission
+template](https://proteinbase.com/templates/competition-submission-template.csv):
+`name,sequence,molecule_class`. Chains of a multi-chain entry are joined by `:` and are
+concatenated (no linker) before screening. `molecule_class` is cross-checked against the
+classifier and reported as `declared_class_match`; it never decides which region is
+compared. Duplicate names are rejected. See `examples/submissions.csv`.
 
 **Pass the whole batch in one call. Never loop over sequences.** The search is batched — one
 MMseqs2 call per database for the entire input — so database load dominates and N sequences

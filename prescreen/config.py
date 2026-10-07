@@ -87,12 +87,10 @@ class Config:
     short_sequence_length: int = 50  # mirrors refdb.LENGTH_SPLIT
     mmseqs_bin: str = "mmseqs"
     threads: int = 0  # 0 = let mmseqs decide
-    # The patent arm (10.2M sequences) costs seconds per query and belongs in an
-    # asynchronous batch, not in the submission path.
-    include_patent_arm: bool = False
-    # Organiser mode adds the internal Proteinbase corpus — other entrants' unpublished
-    # submissions. Never enable it for output a competitor will see.
-    organiser_mode: bool = False
+    # The patent arm (10.2M sequences) costs seconds per query, but a binder claimed in a
+    # granted patent and deposited nowhere else is invisible without it, so it is searched
+    # by default. The cost is amortised over the batch; set False to drop it.
+    include_patent_arm: bool = True
     target_name: str = "TNF-alpha"
     target_fasta: str | None = None
     target_metadata: str | None = None
@@ -111,6 +109,11 @@ class Config:
                 kwargs[name] = float(raw)
             elif f.type in ("int", int):
                 kwargs[name] = int(raw)
+            elif f.type in ("bool", bool):
+                # Without this a bool field would be assigned the raw string, so
+                # PRESCREEN_INCLUDE_PATENT_ARM=0 would read as True and the arm could
+                # never be turned off through the environment.
+                kwargs[name] = raw.strip().lower() in ("1", "true", "yes", "on")
             else:
                 kwargs[name] = raw
         cfg = cls(**kwargs)

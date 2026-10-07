@@ -1,11 +1,8 @@
 # How the TNF-α prescreen works
 
-A plain-language walkthrough of the filter, with worked examples of the known binders it
-screens against. For the formal cut points and calibration, see `PRESCREEN_SPEC.md`.
-
 ## The question it answers
 
-When a submission arrives, the filter decides — from sequence alone, in seconds — whether
+When a submission arrives, the filter decides — from sequence alone — whether
 it is **already known**. "Known" means one of two things:
 
 1. **Already public** — the sequence (or a near-identical one) is in a protein database, a
@@ -24,11 +21,9 @@ Antibodies — the bulk of known anti-TNF binders — nearly all share the same 
 framework. Most of an antibody's sequence is that shared scaffolding; only the CDR loops
 (and above all CDR3) actually touch the antigen. Measured on the reference set, a single
 probe nanobody matches **1,843 of ~5,000 entries** at high coverage on framework alone —
-only 15 of those are genuine near-identical hits. So "is this submission similar to a known
-binder over its whole length?" answers *yes* for almost any antibody-format design, whether
-or not it shares the actual binding site.
+only 15 of those are genuine near-identical hits.
 
-The fix is to compare the **binding region separately**:
+So we need to compare the **binding region separately**:
 
 - If a submission reuses a **known framework but carries a new CDR3**, its whole sequence
   looks ~90% identical to a known binder, but its paratope does not match → **passes**
@@ -38,7 +33,7 @@ The fix is to compare the **binding region separately**:
 
 That discrimination is the core of the filter.
 
-## The pipeline, step by step
+## The pipeline
 
 1. **Classify** the submission by format (nanobody, Fab, IgG, affibody, monobody, DARPin,
    miniprotein, peptide …) from sequence. The format decides which binding region to read.
@@ -46,7 +41,7 @@ That discrimination is the core of the filter.
    for alternative scaffolds, or the whole sequence for a short peptide.
 3. **Prior-art search** — one batched MMseqs2 search per public database (PDB, SwissProt,
    PLAbDab + PLAbDab-nano for single-domain formats, Thera-SAbDab, THPdb, published
-   Proteinbase designs; USPTO patents when enabled). Short sequences get a second, sensitive
+   Proteinbase designs; USPTO patents). Short sequences get a second, sensitive
    pass so a 12-mer peptide copied from a paper is not silently missed. Each top hit's own
    sequence is re-numbered and its paratope compared with the submission's — so a shared
    framework is reported as context, not as a known molecule.
@@ -107,8 +102,7 @@ against TNF-α), UniProt (1), THPdb (1).
 
 ## Example known binders, by category
 
-Verbatim submission of any of these — or a close variant — is what the filter is built to
-catch. Identifiers are the stable `id` column of `tnfa_binders.csv`.
+Verbatim submission of any of these — or a close variant — is what the filter is built to catch. Identifiers are the stable `id` column of `tnfa_binders.csv`.
 
 **Approved / clinical antibodies** (searched as heavy + light chains, and as structural Fv)
 
@@ -147,14 +141,15 @@ catch. Identifiers are the stable `id` column of `tnfa_binders.csv`.
 |----|------|----------|
 | TNFB03773 | confirmed binder, 12-mer (PDB) | `ACPPCLWQVLCG` |
 
-**Designs tested and found not to bind** (a hit here means "already tried, did not work")
+**Designs tested and found not to bind** 
+A hit here means "already tried, did not work"
 
 | id | note |
 |----|------|
 | TNFB03240 | Proteinbase miniprotein design, tested non-binder, 81 aa |
 | TNFB03241 | Proteinbase miniprotein design, tested non-binder, 81 aa |
 
-## Worked discrimination (from calibration)
+## Examples (from calibration)
 
 | submission type | verdict | why |
 |-----------------|---------|-----|

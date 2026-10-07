@@ -68,6 +68,69 @@ ANTIBODY_CATEGORIES = (
 )
 SCAFFOLD_CATEGORIES = ("affibody", "monobody", "darpin")
 
+# The Proteinbase submission template carries a ``molecule_class`` the submitter declares
+# (https://proteinbase.com/templates/competition-submission-template.csv). It is a
+# cross-check, never a substitute: trusting it would let a mis-declared submission
+# redirect which region is compared, which is exactly what the germline floor below
+# exists to prevent. Each declared class maps to the categories that agree with it —
+# deliberately loose, because a VHH whose hallmark tetrad is mutated types as
+# ``vh_domain`` and that is not a mis-declaration.
+DECLARED_CLASS_MAP = {
+    "nanobody": {"nanobody", "vh_domain", "single_domain_antibody"},
+    "vhh": {"nanobody", "vh_domain", "single_domain_antibody"},
+    "sdab": {"nanobody", "vh_domain", "single_domain_antibody"},
+    "vnar": {"single_domain_antibody", "vh_domain", "nanobody"},
+    "scfv": {"scfv", "fv"},
+    "fv": {"fv", "scfv"},
+    "fab": {"fab", "fv"},
+    "fab_kappa": {"fab", "fv"},
+    "fab_lambda": {"fab", "fv"},
+    "igg": {"igg", "fab", "fv"},
+    "igg_kappa": {"igg", "fab", "fv"},
+    "igg_lambda": {"igg", "fab", "fv"},
+    "heavy_chain": {"igg", "fab", "fv", "vh_domain", "nanobody"},
+    "light_chain": {"igg", "fab", "fv", "single_domain_antibody"},
+    "antibody": {"igg", "fab", "fv", "scfv", "nanobody", "vh_domain"},
+    "affibody": {"affibody"},
+    "monobody": {"monobody"},
+    "darpin": {"darpin"},
+    "peptide": {"peptide", "miniprotein"},
+    "miniprotein": {"miniprotein", "peptide", "small_protein"},
+    "minibinder": {"miniprotein", "peptide", "small_protein"},
+    # "single_chain" in the template means one chain of anything that is not an antibody
+    # format, so it agrees with every non-antibody category.
+    "single_chain": {
+        "peptide", "miniprotein", "small_protein", "unclassified",
+        "affibody", "monobody", "darpin",
+    },
+}
+
+
+def compare_declared(declared: str | None, category: str) -> str | None:
+    """Compare a submitter's declared ``molecule_class`` with the assigned category.
+
+    Returns ``"agree"``, ``"mismatch"``, ``"unknown"`` (the declared class is not one we
+    know how to compare), or ``None`` when nothing was declared.
+    """
+    if not declared:
+        return None
+    allowed = DECLARED_CLASS_MAP.get(declared.strip().lower())
+    if allowed is None:
+        return "unknown"
+    return "agree" if category in allowed else "mismatch"
+
+# antpack returns a numbering for *any* input — it force-fits the sequence to the closest
+# antibody scheme and reports a germline percent-identity. A non-antibody (e.g. a TNFR
+# cysteine-rich ectodomain, with or without an Fc fusion as in etanercept) numbers at
+# <= 0.37 identity; genuine variable domains sit far above this — on the curated anti-TNF
+# set every real antibody chain's best domain is >= 0.48 (the lone VNAR, a divergent shark
+# single-domain), with VHH >= 0.83 and Fv >= 0.74. A numbered domain is therefore accepted
+# as an antibody only if its BEST chain's germline identity clears this floor. A detected
+# constant domain alone is NOT sufficient: an Fc-fusion of a non-antibody binder (etanercept
+# is TNFR2 + IgG1 Fc) carries a real Fc but no paratope, so it must not be typed as an
+# antibody and compared on CDRs it does not have.
+ANTIBODY_GERMLINE_FLOOR = 0.45
+
 
 @dataclass
 class Classification:
@@ -210,16 +273,30 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
         antibody_error = repr(exc)
     else:
         antibody_error = None
+    antibody_reject = None
     if chains:
         category, evidence = _antibody_subformat(seq, chains)
         pids = [float(c.get("percent_identity") or 0.0) for c in chains.values()]
-        return Classification(
-            category=category,
-            region_kind="antibody_cdrs",
-            confidence=round(min(pids) if pids else 0.0, 3),
-            length=n,
-            evidence=evidence,
-        )
+        max_pid = max(pids) if pids else 0.0
+        # Accept the numbering as a real antibody only if the best chain clears the germline
+        # floor; otherwise it is a force-fit onto a non-antibody and we fall through to the
+        # scaffold / length branches. Confidence is the BEST chain's identity (a spurious
+        # second chain at low identity must not drag it down). A constant domain is reported
+        # in the evidence and drives the subformat, but does not on its own make an Fc-fusion
+        # of a non-antibody binder count as an antibody.
+        if max_pid >= ANTIBODY_GERMLINE_FLOOR:
+            return Classification(
+                category=category,
+                region_kind="antibody_cdrs",
+                confidence=round(max_pid, 3),
+                length=n,
+                evidence=evidence,
+            )
+        antibody_reject = {
+            "chains": list(chains),
+            "max_germline_identity": round(max_pid, 3),
+            "floor": ANTIBODY_GERMLINE_FLOOR,
+        }
 
     # 2. Alternative scaffolds, by framework identity to the canonical reference.
     fw = {
@@ -253,6 +330,13 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
         evidence={
             "framework_identity": fw,
             "gate": gate,
-            "antibody_numbering": "rejected" if antibody_error else "no_valid_domain",
+            "antibody_numbering": (
+                "rejected"
+                if antibody_error
+                else "below_germline_floor"
+                if antibody_reject
+                else "no_valid_domain"
+            ),
+            "antibody_reject": antibody_reject,
         },
     )

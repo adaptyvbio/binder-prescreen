@@ -35,8 +35,7 @@ For each submission, in order (`prescreen.screen`):
 5. **Within-batch clustering** (`cluster.py`) — flags duplicate submissions in the batch.
 6. **Verdict** (`flags.py`) — the ordered flag logic in §2.
 
-Everything is MMseqs2 for search and Levenshtein identity for short-region comparison; no
-HMMER, no profile-HMMs, no structure.
+Everything is MMseqs2 for search and Levenshtein identity for short-region comparison.
 
 ---
 
@@ -117,13 +116,8 @@ excluded from identity arithmetic and matched only by a wildcard-aware exact tes
 | therasabdab | therapeutic antibody chains (incl. approved anti-TNFs) | 2,533 | public |
 | thpdb | THPdb therapeutic proteins | 239 | public |
 | proteinbase_public | published Proteinbase designs | 1,494 | public |
-| uspto | USPTO patent protein sequences (off the submission path, §5) | 10,206,785 | public |
-| proteinbase_internal | other entrants' unpublished submissions | 1,051 | **internal only** |
+| uspto | USPTO patent protein sequences (searched on every run) | 10,206,785 | public |
 
-**Visibility is a correctness constraint.** `proteinbase_internal` and the past-submission
-set may raise an internal duplicate flag for the organisers but must **never** appear as
-evidence shown to a competitor. `best_prior_art` filters to public arms; organiser-only
-searches require `Config(organiser_mode=True)`.
 
 ### Known-binder set (`tnfa_binders.fasta`, `.csv`)
 
@@ -192,32 +186,18 @@ age per arm (from the manifest) belongs next to any "no prior art found" verdict
 
 1. **Scaffold de-novo-ness is not assessed.** A novel scaffold carrying a genuinely new
    paratope against the TNF-α epitope passes — by design. This filter answers "is it
-   known", not "is it clever".
+   known".
 2. **No structure arm.** A submission that copies a known binder's fold with a rewritten
-   sequence (low sequence identity, same 3-D paratope) is not caught. That is the
-   scaffold novelty scale's job, not this one.
+   sequence (low sequence identity, same 3-D paratope) is not caught. 
 3. **Unpublished competition submissions.** The current round's submissions are not yet
    public, so a participant resubmitting their own earlier unpublished design cannot be
-   caught except in organiser mode against the internal corpus.
-4. **Patent arm is off the submission path.** The 10.2 M-sequence USPTO arm costs ~4 s per
-   query and must run as an asynchronous batch (`Config(include_patent_arm=True)`); it also
-   covers US filings only, last updated 2025-09.
-5. **Database staleness.** The general and antibody arms on the mount are ~344 days old
-   (built 2025-10-27). A binder published in the last year is prior art this set will not
-   find — rerun `build_reference_dbs.sh` before the round opens.
-6. **Short-sequence composite.** For a 10–15-mer the aligner trims mutated termini and can
+   caught.
+4. **Database staleness.** The databases might not contain existing binders.
+5. **Short-sequence composite.** For a 10–15-mer the aligner trims mutated termini and can
    report `fident = 1.0` with `qcov < 1`; always threshold on the composite or on fident
    and qcov jointly, never on fident alone.
-7. **Humanised VHHs** that read a human VH hallmark tetrad may classify as `vh_domain`
+6. **Humanised VHHs** that read a human VH hallmark tetrad may classify as `vh_domain`
    rather than `nanobody`; both are searched against the same references, so the verdict is
    unaffected, but the reported category can differ.
 
----
 
-## 7. Throughput
-
-On the 1,036-sequence calibration batch (local, 8 threads, no patent arm): classification
-13 s, target whole-sequence 5 s, target region 99 s, prior-art 142 s, clustering 3 s. The
-per-arm MMseqs2 cost is dominated by PDB and SwissProt (~11–18 s per batch each) and is
-near-constant in batch size, so throughput improves per-sequence as the batch grows. The
-earlier multi-hour runs were resource contention with concurrent jobs, not the filter.

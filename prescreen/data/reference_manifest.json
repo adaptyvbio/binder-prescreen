@@ -264,38 +264,6 @@
       ],
       "note": "published designs from earlier rounds - the designed-binder prior art"
     },
-    "proteinbase_internal": {
-      "arm": "designs",
-      "visibility": "internal",
-      "present": true,
-      "db_prefix": "<PRESCREEN_DB_ROOT>/proteinbase/proteinbase",
-      "root": "<PRESCREEN_DB_ROOT>",
-      "provenance": "prebuilt on the workstation mount, verified here",
-      "entries": 1051,
-      "dbtype": {
-        "raw": 0,
-        "base_type": "amino_acids",
-        "int_encoded": false
-      },
-      "data_bytes": 118378,
-      "index_sha256": "0b03774462afbc97d2f920db3ad5c7d1e09d04a03c28fcadfd1b60ba95efce10",
-      "db_built": "2025-11-12",
-      "age_days": 328.0,
-      "upstream_release": null,
-      "createdb_source_file": "proteins.fasta",
-      "source_url": "unpublished designs; not built by scripts/build_reference_dbs.sh",
-      "build_recipe": "\nnot built by this repository\n",
-      "source_files": [
-        {
-          "file": "proteins.fasta",
-          "size_bytes": 341036,
-          "mtime": "2025-11-12",
-          "sha256": "ccfaf24ce9fe5f396134a32e58f9b9f4f7479f46038fb9ebf0828cb2f99758d3",
-          "sha256_note": null
-        }
-      ],
-      "note": "NOT public prior art. Use only for an internal-duplicate flag, never to tell a competitor their sequence is 'already known'"
-    },
     "uspto": {
       "arm": "patent",
       "visibility": "public",
@@ -321,11 +289,10 @@
       "note": "patent protein sequences; createdb must be run on a FASTA conversion, not on the EMBL-style .dat"
     }
   },
-  "disclosure_policy": "Which arms may be cited to a competitor as evidence their sequence is already known: the 8 arms with visibility='public' only - pdb, swissprot, plabdab, plabdab_nano, therasabdab, thpdb, proteinbase_public, uspto. NOT proteinbase_internal (visibility='internal'), and NOT sequence_similarity/competitionseqs.fasta, which is the same private visibility slice of the proteinbase proteins table: both are other submitters' unpublished work. Search them if you want an internal-duplicate flag for the organisers, but never surface them in feedback to a submitter. prescreen_refdb.best_prior_art() enforces this by filtering to PUBLIC_ARMS; do not widen it.",
+  "disclosure_policy": "Which arms may be cited to a competitor as evidence their sequence is already known: all 8 arms in this manifest, every one of which has visibility='public' - pdb, swissprot, plabdab, plabdab_nano, therasabdab, thpdb, proteinbase_public, uspto. prescreen_refdb.best_prior_art() filters to PUBLIC_ARMS; keep that filter, so that a non-public arm added later cannot reach a submitter's feedback by default.",
   "verification_notes": [
     "pdb holds 987,345 mol:protein and 59,278 mol:na chains; `mmseqs databases PDB` does not filter by molecule type. Nucleic-acid chains cannot match a protein query, so the effective protein prior art is 987,345 chains.",
     "The mounted pdb/swissprot/plabdab databases store sequences int-encoded (dbtype flag bit 0x80000 on pdb and swissprot), so the data files are not readable as text; use `mmseqs convert2fasta` to inspect them.",
-    "proteinbase_internal is STALE relative to its own source: proteins.fasta holds 2,578 records but the database index holds 1,051. Re-run createdb before relying on it. It is an internal slice and is not public prior art in any case.",
     "Every arm was confirmed searchable by a real query, not just by createdb reporting success - the failure mode this project has already hit once."
   ],
   "benchmarks": {
