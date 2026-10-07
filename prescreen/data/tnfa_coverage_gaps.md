@@ -51,8 +51,12 @@ Source databases (a sequence can have several):
 | UniProtKB | 2 |
 | THPdb | 1 |
 
-`tnfa_binder_cdrs.csv` / `tnfa_binder_cdrs.fasta` — 2506 unique IMGT CDRs (AntPack numbering) extracted from the
-3141 antibody-class sequences: 1157 CDR3, 800 CDR1, 549 CDR2.
+`tnfa_binder_cdrs.csv` / `tnfa_binder_cdrs.fasta` — 4075 unique known anti-TNF binding regions:
+2521 IMGT CDRs (AntPack numbering) extracted from the antibody-class sequences (1161 CDR3, 810 CDR1, 550 CDR2),
+plus 1554 claimed loops from the `peptide_or_cdr`, `vnar`, `other` and `designed_other` references, which the
+original index left out. The latter carry region `*` and chain `*` where no parent chain could be assigned, and
+are matched against a query's region whatever chain it was numbered at — see
+`scripts/build/augment_binder_cdrs.py`.
 This is the file that answers "known anti-TNF binding region carried on any framework" — a submission can have a
 completely foreign framework and still be caught by a CDR3 match.
 
