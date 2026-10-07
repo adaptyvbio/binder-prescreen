@@ -107,11 +107,6 @@ def evaluate(record: dict, cfg: Config) -> dict:
 
     context: dict = {}
     pa_region = pa.get("region") or {}
-    # None means "no region could be compared", which is not evidence of anything. Keep it
-    # distinct from 0.0 ("compared, and different") all the way to the suppression rule.
-    _pa_region_raw = pa_region.get("region_identity")
-    pa_region_verified = _pa_region_raw is not None
-    pa_region_id = float(_pa_region_raw or 0.0)
     # For antibody formats and alternative scaffolds the framework dominates the
     # sequence, so a whole-sequence match to a public reference (or to a known binder)
     # is usually framework sharing, which these competitions allow. Those categories are
@@ -234,31 +229,35 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # computed there is no finding to suppress with, so the flag stands and the evidence
     # records that it is unverified — a verbatim copy of a published binder whose CDRs
     # happened not to extract must not be reported as a pass.
-    # ...and only when it was examined on the HIT BEING JUDGED. ``pa_region`` is one
-    # number: the best region identity over the top prior-art hits, which are the best
-    # hit per arm. ``best`` and ``best_design`` are frequently different molecules, and
-    # the design hit often is not among the top hits at all, so a single shared number
-    # would let an unrelated arm's paratope decide this hit's verdict in both directions
-    # — promoting a design whose own paratope differs, or excusing one whose paratope was
-    # never looked at. When the region evidence describes a different molecule it says
-    # nothing about this one, so it cannot suppress: the flag stands and the evidence
-    # records that the paratope went unverified.
-    def paratope_known(hit: dict | None) -> tuple[bool, bool]:
-        """``(suppressible, verified_on_this_hit)`` for one prior-art hit."""
-        if not region_aware or not pa_region_verified:
-            return True, False
-        if pa_region.get("hit") != (hit or {}).get("target"):
-            return True, False
-        return pa_region_id >= cfg.prior_art_region_known, True
+    # ...and only on the paratope of the HIT BEING JUDGED. ``best`` and ``best_design``
+    # are frequently different molecules, and the design hit is often not the one that
+    # supplied the strongest region match, so a single best-over-hits number would let an
+    # unrelated arm's paratope decide this hit's verdict in both directions — promoting a
+    # design whose own paratope differs, or excusing one whose paratope was never looked
+    # at. ``per_hit`` holds one identity per hit examined, so each flag reads its own.
+    #
+    # Note 0.0 is a real answer ("compared, and different") and must suppress; only a hit
+    # ABSENT from ``per_hit`` was never examined, and there the flag stands with the
+    # evidence recording the paratope as unverified.
+    per_hit = pa_region.get("per_hit") or {}
+
+    def paratope_known(hit: dict | None) -> tuple[bool, float | None]:
+        """``(suppressible, identity_for_this_hit)`` for one prior-art hit."""
+        if not region_aware:
+            return True, None
+        value = per_hit.get((hit or {}).get("target"))
+        if value is None:
+            return True, None
+        return value >= cfg.prior_art_region_known, value
 
     if design_sim >= cfg.known_sequence:
-        known, verified = paratope_known(best_design)
+        known, hit_region_id = paratope_known(best_design)
         evidence = {
             "reference": best_design["target"],
             "db": best_design["db"],
             "similarity_check": round(design_sim, 4),
-            "region_identity": round(pa_region_id, 4) if verified else None,
-            "paratope_verified": verified if region_aware else None,
+            "region_identity": None if hit_region_id is None else round(hit_region_id, 4),
+            "paratope_verified": (hit_region_id is not None) if region_aware else None,
         }
         if known:
             flags.append("existing_design")
@@ -266,15 +265,15 @@ def evaluate(record: dict, cfg: Config) -> dict:
         else:
             context["design_framework_reused"] = evidence
     if pa_sim >= cfg.known_sequence:
-        known, verified = paratope_known(best)
+        known, hit_region_id = paratope_known(best)
         evidence = {
             "reference": best["target"],
             "db": best["db"],
             "identity": round(best["fident"], 4),
             "query_coverage": round(best["qcov"], 4),
             "similarity_check": round(pa_sim, 4),
-            "region_identity": round(pa_region_id, 4) if verified else None,
-            "paratope_verified": verified if region_aware else None,
+            "region_identity": None if hit_region_id is None else round(hit_region_id, 4),
+            "paratope_verified": (hit_region_id is not None) if region_aware else None,
             "region_hit": pa_region.get("hit"),
         }
         if known:

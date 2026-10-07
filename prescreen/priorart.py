@@ -212,15 +212,27 @@ def best_region_vs_hits(
     single-chain submission does exactly one comparison, as before.
     """
     best = None
+    # ``per_hit`` is merged across chains rather than taken from the winning one: a
+    # submission's heavy chain and light chain are compared against the same hit list, and
+    # the question each flag asks is "what is this hit's paratope identity", not "which
+    # chain won". The strongest comparison for a given hit, from whichever chain produced
+    # it, is the answer.
+    merged: dict = {}
     for regions in chain_regions or []:
         got = region_identity_vs_hits(regions, category, region_kind, hits, cache=cache)
+        for target, value in (got.get("per_hit") or {}).items():
+            prev = merged.get(target)
+            if prev is None or value > prev:
+                merged[target] = value
         if best is None or (got.get("region_identity") or -1.0) > (
             best.get("region_identity") or -1.0
         ):
             best = got
-    return best if best is not None else region_identity_vs_hits(
-        {}, category, region_kind, hits, cache=cache
-    )
+    if best is None:
+        best = region_identity_vs_hits({}, category, region_kind, hits, cache=cache)
+    best = dict(best)
+    best["per_hit"] = merged
+    return best
 
 
 def region_identity_vs_hits(
@@ -248,8 +260,17 @@ def region_identity_vs_hits(
 
     Returns:
         ``{"region_identity": float|None, "hit": str|None, "db": str|None,
-        "hit_region": str|None}``. ``region_identity`` is ``None`` when no region could be
-        compared at all — the query's focus region would not extract, or no hit carried a
+        "hit_region": str|None, "per_hit": {target_id: float}}``.
+
+        ``per_hit`` carries one identity per hit examined, which is what lets a flag be
+        judged on the paratope of the hit it is about. A single best-over-hits number
+        cannot do that: ``best`` and ``best_design`` are usually different molecules, and
+        the hit supplying the maximum region identity is rarely the one with the highest
+        whole-sequence similarity, so one shared number either suppresses a flag using
+        evidence about something else or fails to suppress at all. A hit absent from
+        ``per_hit`` was never compared — its paratope is unknown, not new.
+
+        ``region_identity`` is ``None`` when no region could be compared at all — the query's focus region would not extract, or no hit carried a
         usable one. That is NOT the same as 0.0, which means a region WAS compared and
         differs, and the two must not be conflated: a caller that reads "could not compute"
         as "the paratope is new" turns a failed check into a clean bill of health for a
@@ -263,15 +284,17 @@ def region_identity_vs_hits(
         "db": None,
         "hit_region": None,
         "chain": None,
+        "per_hit": {},
     }
     if region_kind == "whole":
-        return empty
+        return dict(empty)
     _chain, q_focus = focus_region(query_regions)
     if not q_focus:
-        return empty
+        return dict(empty)
     identity = identity_fn_for(category)
     cache = cache if cache is not None else {}
     best = dict(empty)
+    per_hit: dict = {}
     compared = False
     for hit in hits:
         tseq = (hit.get("tseq") or "").strip().upper()
@@ -298,6 +321,9 @@ def region_identity_vs_hits(
         h_focus = max(hit_foci, key=lambda f: float(identity(q_focus, f)))
         value = float(identity(q_focus, h_focus))
         compared = True
+        target = hit.get("target")
+        if target is not None and value > (per_hit.get(target, -1.0)):
+            per_hit[target] = value
         if value > (best["region_identity"] or 0.0):
             best = {
                 "region_identity": round(value, 4),
@@ -312,4 +338,5 @@ def region_identity_vs_hits(
         # Every comparison scored 0.0, so the loop never beat the initial None. The region
         # WAS compared, and the answer is zero.
         best["region_identity"] = 0.0
+    best["per_hit"] = per_hit
     return best
