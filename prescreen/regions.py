@@ -25,6 +25,12 @@ from .compat import proteintyper
 
 FOCUS = "cdr3"
 
+#: Chains allowed to carry the focus region, in preference order: an antibody heavy chain
+#: (``H``), a scaffold's projected paratope (``S``) and a whole-sequence focus (``W``).
+#: A light chain (``K``/``L``) is deliberately absent - it can still be compared, but it
+#: does not get to decide a match. See :func:`prescreen._best_region`.
+PARATOPE_CHAINS = ("H", "S", "W")
+
 
 def extract(seq: str, category: str, region_kind: str) -> dict:
     """Extract the comparison regions for one sequence.
@@ -75,7 +81,7 @@ def identity_fn_for(category: str):
 
 def focus_region(regions: dict) -> tuple[str | None, str]:
     """Return ``(chain, sequence)`` of the focus region, preferring the heavy chain."""
-    for chain in ("H", "S", "W"):
+    for chain in PARATOPE_CHAINS:
         if chain in regions and regions[chain].get(FOCUS):
             return chain, regions[chain][FOCUS]
     for chain, rs in regions.items():

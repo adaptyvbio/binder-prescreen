@@ -7,8 +7,9 @@ whole-sequence search against that corpus cannot answer "is this a known binder"
 would flag almost every antibody-format submission. The binding region has to be
 compared on its own, against regions rather than against whole sequences.
 
-The reference is a deduplicated CDR table (``tnfa_binder_cdrs.csv``): 2,506 unique IMGT
-CDRs extracted from the antibody-class entries, each carrying its chain type, how many
+The reference is the target set's deduplicated CDR table (``<slug>_binder_cdrs.csv``;
+4,075 unique IMGT CDRs for TNF-alpha): regions extracted from the antibody-class entries
+plus the bare claimed loops, each carrying its chain type, how many
 parent sequences it came from, the strongest binder status among those parents, and a
 named agent where one is known.
 
@@ -45,6 +46,12 @@ class CdrEntry:
     n_parents: int
     citation: str
     ambiguous: bool
+    #: How many sequences in a general antibody corpus carry this exact region. A CDR
+    #: seen in hundreds of unrelated antibodies is germline-encoded, so matching it says
+    #: the query uses a common framework, not that it carries a known paratope. 0 means
+    #: never seen - the distinctive case - and is also the default when the index has not
+    #: been annotated, which keeps an un-annotated index behaving as it always did.
+    occurrences: int = 0
 
 
 @dataclass
@@ -57,6 +64,7 @@ class CdrMatch:
     exact: bool
     reference_id: str | None = None
     reference_seq: str | None = None
+    occurrences: int | None = None
     status: str | None = None
     agents: str | None = None
     citation: str | None = None
@@ -72,6 +80,7 @@ class CdrMatch:
             "binder_status": self.status,
             "named_agent": self.agents,
             "citation": self.citation,
+            "corpus_occurrences": self.occurrences,
         }
 
 
@@ -110,12 +119,24 @@ class CdrReference:
                     n_parents=int(float(row.get("n_parent_sequences") or 1)),
                     citation=row.get("example_citation") or "",
                     ambiguous="X" in seq,
+                    occurrences=int(float(row.get("corpus_occurrences") or 0)),
                 )
                 self.entries.append(entry)
                 self.index.setdefault((entry.region, entry.chain), []).append(entry)
                 for parent in (row.get("parent_classes") or "").split(";"):
                     if parent.strip():
                         self.covered_classes.add(parent.strip())
+        # Rarest-first, but a named or confirmed binder's region always ahead of an
+        # anonymous one: when several references match exactly, the informative one should
+        # be the hit that gets reported and judged.
+        for bucket in self.index.values():
+            bucket.sort(
+                key=lambda e: (
+                    not (e.status == "confirmed_binder" or e.agents),
+                    e.occurrences,
+                    e.cdr_id,
+                )
+            )
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -142,6 +163,10 @@ class CdrReference:
         # Wildcard entries are bare claimed loops with no parent chain, so they are
         # consulted for any region on any chain: a patent-claimed binding region is prior
         # art wherever it reappears, not only at the position it was first described in.
+        # Sorted rarest-first at index build, so the exact-match early return below picks
+        # the most discriminative reference that matches rather than whichever happened to
+        # be curated first: an exact hit on a CDR unique to one patent is real evidence,
+        # the same hit on a germline-encoded one is not.
         candidates = [
             *self.index.get((region, chain), ()),
             *self.index.get((region, "*"), ()),
@@ -161,6 +186,7 @@ class CdrReference:
                     status=entry.status,
                     agents=entry.agents or None,
                     citation=entry.citation or None,
+                    occurrences=entry.occurrences,
                 )
             if entry.ambiguous:
                 continue
@@ -176,6 +202,7 @@ class CdrReference:
                     status=entry.status,
                     agents=entry.agents or None,
                     citation=entry.citation or None,
+                    occurrences=entry.occurrences,
                 )
         return best
 

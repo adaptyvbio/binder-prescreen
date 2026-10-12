@@ -14,8 +14,7 @@ Labels (constructed, not assumed):
 Run with the curated reference set:
 
     python calibrate.py \
-        --target prescreen/data/tnfa_binders.fasta \
-        --metadata prescreen/data/tnfa_binders.csv \
+        --target tnfa \
         --unrelated "$PRESCREEN_DB_ROOT/proteinbase_public/proteins.fasta" \
         --n-unrelated 80 --out calibration
 
@@ -39,6 +38,7 @@ os.environ.setdefault("KMP_AFFINITY", "disabled")
 sys.path.insert(0, str(Path(__file__).parent))
 
 from prescreen import Config, mmseqs, screen, to_rows  # noqa: E402
+from prescreen import targets  # noqa: E402
 from prescreen import fixtures  # noqa: E402
 from prescreen.classify import classify  # noqa: E402
 from prescreen.regions import extract, focus_region  # noqa: E402
@@ -198,8 +198,7 @@ def sweep(rows: list, labels: dict) -> list:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--target", required=True)
-    ap.add_argument("--metadata", default=None)
+    ap.add_argument("--target", required=True, help="registered target slug, e.g. tnfa")
     ap.add_argument("--unrelated", required=True)
     ap.add_argument("--out", default="calibration")
     ap.add_argument("--n-unrelated", type=int, default=60)
@@ -209,18 +208,22 @@ def main() -> None:
 
     outdir = Path(args.out)
     outdir.mkdir(parents=True, exist_ok=True)
-    references = mmseqs.read_fasta(args.target)
+    # Resolved once and used for both halves: the fixtures are drawn from the same
+    # set the screen compares against, so a calibration cannot silently be run against
+    # one target's references with another's cut points.
+    target = targets.resolve(args.target)
+    references = mmseqs.read_fasta(target.fasta)
     unrelated = mmseqs.read_fasta(args.unrelated)
     seqs, labels = build_labelled(
         references, unrelated, n_unrelated=args.n_unrelated, per_class=args.per_class
     )
     print(f"labelled set: {len(seqs)} sequences from {len(references)} references")
 
+    cfg = Config.from_env()
+    cfg.target = args.target
     screened = screen(
         seqs,
-        cfg=Config.from_env(),
-        target_fasta=args.target,
-        target_metadata=args.metadata,
+        cfg=cfg,
         workdir=outdir / "work",
         skip_prior_art=args.skip_prior_art,
     )

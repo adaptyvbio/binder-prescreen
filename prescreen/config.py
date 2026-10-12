@@ -16,7 +16,18 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field, asdict
 
+from loguru import logger
+
 DB_ROOT_ENV = "PRESCREEN_DB_ROOT"
+
+#: Pre-multi-target names for the four target-arm cut points, still accepted from the
+#: environment so a pinned deployment does not lose its tuning on upgrade.
+LEGACY_THRESHOLD_ENV = {
+    "tnf_known_identity": "target_known_identity",
+    "tnf_known_coverage": "target_known_coverage",
+    "tnf_known": "target_known",
+    "tnf_homolog": "target_homolog",
+}
 
 
 def resolve_db_root(explicit: str | None = None) -> str | None:
@@ -55,14 +66,16 @@ class Config:
     # Cut points measured by the curation track on the known-binder corpus: the antibody
     # set cross-hits itself at the framework level (a probe VHH returns 647 hits >= 0.70
     # fident, pure Ig background), so a known-binder call needs identity AND coverage
-    # both high. tnf_known_identity requires fident; tnf_known_coverage requires qcov.
-    tnf_known_identity: float = 0.90
-    tnf_known_coverage: float = 0.80
+    # both high. target_known_identity requires fident; target_known_coverage requires
+    # qcov. Measured on the TNF-alpha set; another target inherits them until its own
+    # calibrate.py run says otherwise.
+    target_known_identity: float = 0.90
+    target_known_coverage: float = 0.80
     # Above this whole-sequence composite a non-antibody binder (miniprotein, peptide,
     # affibody) is treated as the known molecule; the antibody formats are judged on the
     # region instead.
-    tnf_known: float = 0.90
-    tnf_homolog: float = 0.70
+    target_known: float = 0.90
+    target_homolog: float = 0.70
 
     # --- target-binder arm (binding region: CDR3 / scaffold paratope) ---
     # A known anti-target paratope on any framework: exact CDR3 match, or CDR3 Levenshtein
@@ -70,6 +83,12 @@ class Config:
     # only corroborate.
     region_match: float = 0.80
     region_min_length: int = 5
+    # A CDR carried by this many sequences in a general antibody corpus is germline, not a
+    # paratope: matching it says the query uses a common framework. Measured: the kappa
+    # CDR-L3 QQRSNWPLT appears in 358 of 350k PLAbDab antibodies, and before this cut
+    # existed every one of those 358 was called a known TNF-alpha binder. Such a match is
+    # still reported, it just cannot decide a verdict on its own. 0 disables the rule.
+    region_corpus_max: int = 100
 
     # --- paratope-aware prior art ---
     # A whole-sequence match to a public reference only means the *molecule* is known if
@@ -94,10 +113,9 @@ class Config:
     # so a missing arm aborts the run. Set True to screen against whatever is mounted and
     # accept that "no prior art found" is then a weaker statement.
     allow_missing_arms: bool = False
-    target_name: str = "TNF-alpha"
-    target_fasta: str | None = None
-    target_metadata: str | None = None
-    target_cdr_csv: str | None = None
+    # Which curated known-binder set to screen against, by slug; see
+    # prescreen.targets. None means the registry's default.
+    target: str | None = None
     extras: dict = field(default_factory=dict)
 
     @classmethod
@@ -119,6 +137,18 @@ class Config:
                 kwargs[name] = raw.strip().lower() in ("1", "true", "yes", "on")
             else:
                 kwargs[name] = raw
+        for old, new in LEGACY_THRESHOLD_ENV.items():
+            raw = os.environ.get(f"PRESCREEN_{old.upper()}")
+            if raw is None or new in kwargs:
+                continue
+            # Renamed when the filter went multi-target: the cut points were never
+            # TNF-specific, only their names were. Honoured rather than ignored, because
+            # a threshold that silently reverts to its default is the kind of failure a
+            # prescreen never reports.
+            logger.warning(
+                "PRESCREEN_{} is deprecated; use PRESCREEN_{}", old.upper(), new.upper()
+            )
+            kwargs[new] = float(raw)
         cfg = cls(**kwargs)
         cfg.db_root = resolve_db_root(cfg.db_root)
         return cfg

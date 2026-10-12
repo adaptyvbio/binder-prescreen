@@ -1,4 +1,4 @@
-# How the TNF-α prescreen works
+# How the binder prescreen works
 
 ## The question it answers
 
@@ -7,8 +7,13 @@ it is **already known**. "Known" means one of two things:
 
 1. **Already public** — the sequence (or a near-identical one) is in a protein database, a
    patent, or an existing published design.
-2. **Already a TNF-α binder** — it matches a known anti-TNF binder, either over the whole
-   sequence or just in its **binding region** (the paratope).
+2. **Already a binder of the target** — it matches a known binder from the curated set
+   for whichever target is being screened, either over the whole sequence or just in its
+   **binding region** (the paratope).
+
+The prior-art half is the same whatever the target; only the curated known-binder set
+changes. TNF-α is used as the worked example throughout, and is the set the thresholds
+were calibrated on.
 
 It does **not** ask whether the scaffold is new. Reusing a published framework is allowed
 in the competition, so a brand-new paratope on an old scaffold is a legitimate entry and

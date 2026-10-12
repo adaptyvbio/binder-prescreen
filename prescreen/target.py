@@ -42,7 +42,7 @@ def known_binder_rank(row: dict, identity_cut: float, coverage_cut: float) -> tu
     """Sort key that picks the hit the known-binder rule is actually tested on.
 
     ``flags.evaluate`` calls a submission a known binder on a conjunction —
-    ``fident >= tnf_known_identity`` AND ``qcov >= tnf_known_coverage`` — but the hit it
+    ``fident >= target_known_identity`` AND ``qcov >= target_known_coverage`` — but the hit it
     reads was, until this key existed, chosen by ``argmax(fident * qcov)``. Those are
     different orderings: a hit at 0.92/0.85 (composite 0.78) loses to one at 0.85/0.95
     (composite 0.81), and the survivor fails the identity cut, so a real known binder goes
@@ -104,6 +104,10 @@ class RegionHit:
     citation: str | None = None
     supporting_exact: int = 0
     per_region: dict | None = None
+    #: Corpus frequency of the matched reference region; ``None`` when the comparison did
+    #: not come from the CDR index (a scaffold paratope or a whole-sequence focus), which
+    #: reads as discriminative because those references are not germline-shared.
+    corpus_occurrences: int | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -122,6 +126,7 @@ class RegionHit:
             "named_agent": self.named_agent,
             "citation": self.citation,
             "supporting_exact_regions": self.supporting_exact,
+            "corpus_occurrences": self.corpus_occurrences,
             "per_region": self.per_region or {},
         }
 
@@ -401,6 +406,7 @@ class TargetReference:
                 citation=focus.citation,
                 supporting_exact=result["supporting_exact"],
                 per_region=result["per_region"],
+                corpus_occurrences=focus.occurrences,
             )
 
         cdr_novelty = proteintyper("cdr_novelty")

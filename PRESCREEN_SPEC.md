@@ -1,4 +1,4 @@
-# TNF-α binder prescreen — specification
+# Binder prescreen — specification
 
 A sequence-level prescreen for submissions to the Anthropic × Adaptyv TNF-α binder
 competition. It runs at submission time, from sequence alone, and answers two questions:
@@ -66,12 +66,12 @@ Rank order (most to least disqualifying):
 
 | # | flag | fires when | cut point |
 |---|------|-----------|-----------|
-| 1 | `known_target_binder` | **non-antibody:** whole-seq composite ≥ `tnf_known`. **antibody/scaffold:** whole-seq fident ≥ `tnf_known_identity` AND qcov ≥ `tnf_known_coverage` AND the binding region matches | 0.90 / (0.90 & 0.80) |
+| 1 | `known_target_binder` | **non-antibody:** whole-seq composite ≥ `target_known`. **antibody/scaffold:** whole-seq fident ≥ `target_known_identity` AND qcov ≥ `target_known_coverage` AND the binding region matches | 0.90 / (0.90 & 0.80) |
 | 2 | `target_region_match` | binding region (CDR3 / paratope) matches a known binder: exact, or Levenshtein ≥ `region_match` on a matching chain | exact, or 0.80 |
 | 3 | `verbatim_target_fragment` | sequence is an exact substring of a known binder (or contains one). Whole-sequence categories only | ≥ 8 aa |
 | 4 | `existing_design` | whole-seq ≥ `known_sequence` to the Proteinbase design corpus, with paratope also matching | 0.95 |
 | 5 | `known_sequence` | whole-seq ≥ `known_sequence` to any public reference (PDB, SwissProt, PLAbDab, THPdb, patents), paratope also matching | 0.95 |
-| 6 | `target_binder_homolog` | **non-antibody only:** whole-seq to a known binder in [`tnf_homolog`, `tnf_known`) | 0.70–0.90 |
+| 6 | `target_binder_homolog` | **non-antibody only:** whole-seq to a known binder in [`target_homolog`, `target_known`) | 0.70–0.90 |
 | 7 | `near_known_sequence` | **non-antibody only:** prior-art similarity in [`near_known_sequence`, `known_sequence`) | 0.80–0.95 |
 | 8 | `batch_duplicate` | clusters with another submission in the same batch | 0.95 id / 0.80 cov |
 | 9 | `no_reference_signal` | no hit on either arm, at a length where k-mer search is unreliable (< 25 aa) | — |
@@ -151,7 +151,19 @@ excluded from identity arithmetic and matched only by a wildcard-aware exact tes
 | uspto | USPTO patent protein sequences (searched on every run) | 10,206,785 | public |
 
 
-### Known-binder set (`tnfa_binders.fasta`, `.csv`)
+### Known-binder set (`data/targets/<slug>/<slug>_binders.fasta`, `.csv`)
+
+One per target; the figures below are the TNF-α set, which is also the set every cut
+point in this document was measured on. A target registered later inherits those cut
+points untested until `calibrate.py` is run over its own references.
+
+`glp1r` has been through that run (2026-10-12, 442 fixtures): the **whole-sequence** cut
+points reproduce their TNF behaviour on it — 50/50 knowns caught, no false positives on
+80 unrelated designs or 6 framework-reuse chimeras, and `target_known` = 0.90 sitting
+mid-plateau — so they are now measured on both sets. `region_match` is not: only ~10
+fixtures and 6 grafts exercise the region arm there, because 215 of its 225 references
+are peptides with no CDR to compare. That value remains TNF-only evidence.
+
 
 4,964 unique known/claimed TNF-α binders with per-entry provenance: 28 confirmed binders,
 4,901 patent/document-level claims, 35 tested non-binders (Proteinbase designs that did not
@@ -171,10 +183,11 @@ variables. Defaults:
 
 | parameter | value | meaning |
 |-----------|-------|---------|
-| `tnf_known_identity` / `tnf_known_coverage` | 0.90 / 0.80 | antibody known-binder (identity AND coverage) |
-| `tnf_known` | 0.90 | non-antibody known-binder (composite) |
+| `region_corpus_max` | 100 | a region carried by this many sequences in a general antibody corpus is germline, and cannot decide a match on its own (a *named or confirmed* binder's region is exempt) |
+| `target_known_identity` / `target_known_coverage` | 0.90 / 0.80 | antibody known-binder (identity AND coverage) |
+| `target_known` | 0.90 | non-antibody known-binder (composite) |
 | `region_match` | 0.80 | binding-region (CDR3 / paratope) match |
-| `tnf_homolog` | 0.70 | non-antibody homolog band lower edge |
+| `target_homolog` | 0.70 | non-antibody homolog band lower edge |
 | `known_sequence` | 0.95 | public prior-art / existing-design |
 | `near_known_sequence` | 0.80 | prior-art near-miss band lower edge |
 | `batch_cluster_identity` / `_coverage` | 0.95 / 0.80 | within-batch duplicate |
@@ -192,8 +205,8 @@ Pass rate by class (`calibration_table.csv`):
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
 | mutant 2 % / 5 % | 236 | 0 % / 1 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 5 % / 23 % / 94 % | graded — a heavily rewritten binder is a new molecule |
-| **grafted known CDR3** | 60 | **0 %** | every graft onto a new framework is caught — the case whole-sequence misses |
+| mutant 10 % / 20 % / 35 % | 354 | 9 % / 29 % / 96 % | graded — a heavily rewritten binder is a new molecule |
+| **grafted known CDR3** | 60 | **2 %** | 59 of 60 grafts onto a new framework are caught — the case whole-sequence misses |
 | **reused framework** | 60 | **57 %** | correctly passed; a further 35 % flag only as in-batch duplicates. The remaining 5 are a fixture limitation, not a filter error — see below |
 | unrelated design | 80 | 0 % | **not a usable negative** — see below |
 | shuffled control | 118 | 98 % | composition-matched negative |
@@ -201,7 +214,7 @@ Pass rate by class (`calibration_table.csv`):
 The binding-region arm is the separator: region identity to the nearest known binder has
 median **1.00 for grafts** (known paratope present) versus **0.44 for reused frameworks**
 and **0.27 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 97 % of
-grafts fall above it, 8 % of framework-reuse and 2 % of unrelated cases do.
+grafts fall above it, 8 % of framework-reuse and 1 % of unrelated cases do.
 
 **The five flagged framework-reuse rows are a fixture limitation.** Every one of them has
 `fident = 1.00`, `qcov = 1.00` and region identity 1.00 against a curated binder, and every

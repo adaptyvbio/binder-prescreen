@@ -1,27 +1,24 @@
-# TNF-α binder prescreen
+# Binder prescreen
 
 A sequence-level prior-art and known-binder filter for protein-design binder
-competitions. 
+competitions at Adaptyv. 
 
 Given a submitted sequence it answers two questions, from sequence alone:
 
 1. **Is this already public?** MMseqs2 against PDB, SwissProt, PLAbDab (+ PLAbDab-nano
    for single-domain formats), Thera-SAbDab, THPdb, the published Proteinbase designs,
    and 10.2 M USPTO patent sequences.
-2. **Is it a known TNF-α binder?** Whole-sequence *and* **binding-region** comparison
-   against a curated set of 4,964 known or claimed anti-TNF binders that ships with the
-   package.
+2. **Is it a known binder of the target?** Whole-sequence *and* **binding-region**
+   comparison against a curated set of known or claimed binders for that target. 
 
-It deliberately does **not** judge whether the scaffold is de novo. Reusing a published
+This pipeline does **not** judge whether the scaffold is de novo. Reusing a published
 framework is allowed in these competitions, so the molecule category (nanobody, Fab, IgG,
 affibody, monobody, DARPin, miniprotein, peptide) is used only to decide which binding
 region to compare. Novelty will be computed on ProteinBase using the criteria outlined [here](https://adaptyvbio.com/blog/novelty).
 
 ## Why the binding region is compared separately
 
-Antibodies are most of the known anti-TNF corpus and nearly all share the same germline
-framework. Measured on the reference set, a randomly sampled VHH matches **1,843 of ~5,000
-entries** at ≥0.80 coverage and 647 of them at ≥0.70 identity. For antibodies and other molecules with designable paratope and rigid framework we need a different search. 
+Antibodies are well known-scaffolds and in contrast to de novo miniproteins only a small fraction of their sequence must be designed to alter the binding target. These are the complimentary determining regions. This region is also often called the paratope. If we would use whole-sequence similarity it would screen out many submitted designs because only the paratope was changed. 
 
 Comparing the paratope independently fixes both error directions:
 
@@ -30,10 +27,7 @@ Comparing the paratope independently fixes both error directions:
 | known framework, **new CDR3** | ~90 % identical to a known binder | no match | **passes** — a new binder, allowed |
 | **known CDR3**, fresh framework | looks unrelated | matches | **flagged** — a known binder in disguise |
 
-That discrimination is the whole point of the tool. Cut points, the calibration behind
-them (1,026 labelled sequences), and the deliberate blind spots are in
-[`PRESCREEN_SPEC.md`](PRESCREEN_SPEC.md); [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md) is the
-plain-language walkthrough.
+The calibration behind the identification of the different molecule classes and detection of the paratopes is in [`PRESCREEN_SPEC.md`](PRESCREEN_SPEC.md); [`HOW_IT_WORKS.md`](HOW_IT_WORKS.md) is a plain-language walkthrough.
 
 ## Install
 
@@ -50,15 +44,18 @@ micromamba install -c conda-forge -c bioconda mmseqs2
 `antpack` is pinned to `0.3.8.6.2`: 0.4 moved the numbering tools behind a license key and
 imports a Qt GUI on a headless box.
 
-## Screen something in 30 seconds, with no databases
+## Screen a design in 30 seconds, with no databases
 
-`--skip-prior-art` turns off the public-corpus search and runs the TNF-specific arm only:
+`--skip-prior-art` turns off the public-corpus search and runs the target arm only:
 whole-sequence against the curated binder set, the paratope comparison, and the verbatim
-fragment check. The reference set is inside the package, so this needs **no downloads**.
+fragment check. This needs **no downloads**.
 
 ```bash
-uv run prescreen examples/submissions.fasta --skip-prior-art -o report/
+uv run prescreen --list-targets                                     # registered sets
+uv run prescreen examples/submissions.fasta --skip-prior-art  --target tnfa -o report/
 ```
+
+Replace `--target <slug>` to pick a target other than the default. 
 
 ```
 screened 4 sequences -> report/report.csv
@@ -103,16 +100,42 @@ Every arm is also **indexed** (`mmseqs createindex`). This is much faster but re
 
 ```bash
 export PRESCREEN_DB_ROOT=~/prescreen-dbs
-uv run prescreen examples/submissions.fasta -o report/
-uv run prescreen examples/submissions.csv -o report/
-uv run prescreen examples/submissions.csv --no-patent -o report/   # without the USPTO arm
+uv run prescreen examples/submissions.fasta --target tnfa -o report/
+uv run prescreen examples/submissions.csv  --target glp1r -o report/
+uv run prescreen examples/submissions.csv  --target tnfa --no-patent -o report/
 ```
 
-Every arm, the USPTO patent arm included, is searched on every run: a binder claimed in a
-granted patent and deposited nowhere else is invisible without it. It is the slow arm
-(10.2 M sequences, ~6–7 min per batch), and the cost is amortised over the whole batch —
-which is the reason to submit a batch rather than one sequence at a time. `--no-patent`
-drops it.
+### Choosing the target
+
+
+| slug | target | UniProt | references | composition |
+|---|---|---|---|---|
+| `tnfa` | TNF-α | [P01375](https://www.uniprot.org/uniprotkb/P01375) | 4,964 | antibody-dominated — ~3,100 Ig chains and Fvs, plus affibodies, monobodies, miniproteins, receptor-derived decoys |
+| `glp1r` | GLP-1 receptor | [P43220](https://www.uniprot.org/uniprotkb/P43220) | 225 | peptide-dominated — 215 GLP-1 analogue peptides, 7 antibody chains, 3 peptide-Fc fusions |
+
+`tnfa` is the default, so omitting `--target` screens against TNF-α. 
+
+
+**The thresholds were calibrated on `tnfa`, and the whole-sequence ones re-checked on
+`glp1r`** (442 fixtures: 50/50 knowns caught, no false positives on 80 unrelated designs
+or 6 framework-reuse chimeras), so they hold for both. The **binding-region** cut point is
+still TNF-only: `glp1r` has 7 antibody chains, so barely any fixture exercises it.
+
+Two things to expect on `glp1r` specifically. Some of its peptides carry `X` from ChEMBL's
+non-standard residues and match only where the wildcard lands. And short submissions come
+back `no_reference_signal` rather than `pass` — below 25 aa the filter refuses to call
+silence a pass, because a short sequence finding nothing may be a true negative or a blind
+search.
+
+From Python, the slug goes on the config:
+
+```python
+from prescreen import Config, screen
+cfg = Config.from_env()
+cfg.target = "glp1r"          # or leave it None for the default
+out = screen({"sub_001": "HGEGTFTSDLSKQMEEEAVRLFIEWLKNGGPSSGAPPPS"}, cfg=cfg)
+print(out["target"])          # what it actually compared against
+```
 
 ### Input format
 
@@ -183,34 +206,97 @@ tell someone than a hit to a `confirmed_binder`.
 
 ## Use it from Claude Code
 
-The repository ships a skill at `.claude/skills/binder-prescreen/`, so cloning is the whole
-install — Claude Code picks it up from the repo root. Ask for a screen in your own words, or
-invoke it by name:
+The repository ships a skill at `.claude/skills/binder-prescreen/`
+
+Ask for a screen in your own words, or invoke it by name:
 
 ```
 /binder-prescreen screen submissions.fasta
 ```
 
-It covers the mechanics: installing, building the reference arms, running a batch in one
-call rather than a loop, and checking which arms were actually searched before trusting a
-clean result. What the verdicts mean stays here and in `PRESCREEN_SPEC.md`.
-
 ## Reference data
 
-`prescreen/data/` ships the curated TNF-α set: **4,964** unique known or claimed binders
-with per-entry provenance — 28 confirmed binders, 4,901 patent/document-level claims, 35
-Proteinbase designs tested and found *not* to bind — plus **4,075** deduplicated anti-TNF
-IMGT CDRs as the paratope reference. By primary source: USPTO patents (4,423), PLAbDab
-incl. Thera-SAbDab (479), Proteinbase (35), PDB (25, all contact-verified against P01375),
-UniProt (1), THPdb (1). Named agents are resolved for adalimumab, infliximab,
-certolizumab, golimumab, etanercept, ozoralizumab and others.
+Curated known-binder sets live one directory per target under `prescreen/data/targets/`
 
+**`tnfa`** — **4,964** unique known or claimed binders with per-entry provenance: 28
+confirmed binders, 4,901 patent/document-level claims, 35 Proteinbase designs tested and
+found *not* to bind, plus **4,075** deduplicated anti-TNF IMGT CDRs. By primary source:
+USPTO patents (4,423), PLAbDab incl. Thera-SAbDab (479), Proteinbase (35), PDB (25, all
+contact-verified against P01375), UniProt (1), THPdb (1). Named agents are resolved for
+adalimumab, infliximab, certolizumab, golimumab, etanercept, ozoralizumab and others.
 Composition and the 15 numbered coverage gaps:
-[`prescreen/data/tnfa_coverage_gaps.md`](prescreen/data/tnfa_coverage_gaps.md). Per-arm
-counts, provenance and snapshot dates: `prescreen/data/reference_manifest.json`.
+[`tnfa_coverage_gaps.md`](prescreen/data/targets/tnfa/tnfa_coverage_gaps.md).
 
-`--target` points the known-binder arm at a different curated set, so the filter works for
-any target, not just TNF-α.
+**`glp1r`** — **225** references: 215 GLP-1 analogue peptides (ChEMBL), 7 antibody chains
+and 3 peptide-Fc fusions, with **218** CDR-table rows of which 202 are the bare peptides
+carried as chain-agnostic wildcard entries. By primary source: ChEMBL (192), PDB (33).
+Named agents include dulaglutide, survodutide, efinopegdutide, efsubaglutide alfa and
+maridebart cafraglutide. Smaller and peptide-dominated where `tnfa` is
+antibody-dominated, so it inherits the TNF-calibrated thresholds untested and carries the
+two coverage limits noted above.
+
+
+### Adding a target
+
+A target is a directory under `prescreen/data/targets/` plus one entry in `targets.json`.
+
+**1. The curated FASTA**, one record per known or claimed binder, provenance in the
+header, pipe-separated and positional:
+
+```
+>MYT00001|class|binder_status|source|accession|named_agent
+```
+
+`class` must come from:
+`fv_domain_vh`, `fv_domain_vl`, `igg_chain_heavy`, `igg_chain_light`, `igg_fv`, `fab`,
+`vhh`, `vhh_putative`, `vnar`, `peptide_or_cdr` (the CDR-indexed ones), and `affibody`,
+`monobody`, `miniprotein`, `receptor_derived`, `viral_decoy`, `designed_other`,
+`scaffold_other`, `other`.
+
+**2. Normalise it** — a curation track's own vocabulary rarely matches:
+
+```bash
+uv run python scripts/build/target_set_from_fasta.py \
+    --fasta curated.fasta --slug mytarget \
+    --out-dir prescreen/data/targets/mytarget
+```
+
+**3. Build the CDR index**, the reference set for the binding-region arm:
+
+```bash
+uv run python scripts/build/augment_binder_cdrs.py \
+    --binders prescreen/data/targets/mytarget/mytarget_binders.fasta \
+    --metadata prescreen/data/targets/mytarget/mytarget_binders.csv \
+    --cdrs    prescreen/data/targets/mytarget/mytarget_binder_cdrs.csv \
+    --prefix MYTCDRX --numbered-classes igg_chain_heavy,igg_chain_light,other
+```
+
+
+**3b. Annotate it against a general antibody corpus.** Without this the region arm treats
+a germline CDR as evidence — and germline CDRs are the ones that recur across unrelated
+antibodies:
+
+```bash
+uv run python scripts/build/annotate_cdr_corpus.py \
+    --cdrs prescreen/data/targets/mytarget/mytarget_binder_cdrs.csv \
+    --corpus /path/to/plabdab.fasta --jobs 24
+```
+
+This adds a `corpus_occurrences` column. A region above `region_corpus_max` (default 100)
+is still reported but cannot decide a verdict on its own; a region belonging to a *named
+or confirmed* binder is exempt, since it is only common because the corpus contains that
+binder. An index without the column behaves as before, so this is additive.
+
+**4. Register it** in `prescreen/data/targets/targets.json`:
+
+```json
+"mytarget": {
+  "name": "My target", "uniprot": "P00000", "dir": "mytarget",
+  "fasta": "mytarget_binders.fasta", "metadata": "mytarget_binders.csv",
+  "cdr_csv": "mytarget_binder_cdrs.csv",
+  "notes": "What is in the set, and what is not."
+}
+```
 
 ## License
 

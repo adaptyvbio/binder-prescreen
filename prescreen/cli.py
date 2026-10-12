@@ -1,4 +1,4 @@
-"""Batch CLI: ``prescreen <submissions> --target <binders.fasta> -o <outdir>``.
+"""Batch CLI: ``prescreen <submissions> --target <slug> -o <outdir>``.
 
 Reads FASTA or CSV, screens the whole batch in one pass, and writes a flat CSV plus the
 full JSON record (every hit, every threshold, every piece of evidence).
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import click
 
-from . import Config, mmseqs, screen, to_rows
+from . import Config, mmseqs, screen, targets, to_rows
 from .flags import FLAG_ORDER
 
 
@@ -60,20 +60,45 @@ def _read_submissions(
     return records, declared
 
 
+def _list_targets(ctx, param, value):
+    """Print the registered known-binder sets and exit."""
+    if not value or ctx.resilient_parsing:
+        return
+    sets = targets.registry()
+    if not sets:
+        click.echo("no targets registered")
+        ctx.exit(1)
+    default = targets.default_slug()
+    for slug in sorted(sets):
+        t = sets[slug]
+        mark = " (default)" if slug == default else ""
+        n = sum(1 for line in t.fasta.open() if line.startswith(">")) if t.fasta.exists() else 0
+        click.echo(f"{t.describe()}{mark}: {n} references, {t.fasta}")
+        if not t.cdr_csv or not t.cdr_csv.exists():
+            click.echo("    no CDR index - the binding-region arm is whole-sequence only")
+        for problem in targets.check(t):
+            click.echo(f"    note: {problem}")
+        if t.notes:
+            click.echo(f"    {t.notes}")
+    ctx.exit(0)
+
+
 @click.command(context_settings={"help_option_names": ["-h", "--help"]})
 @click.argument("submissions", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--target",
-    "target_fasta",
-    type=click.Path(exists=True, path_type=Path),
+    "target_slug",
     default=None,
-    help="Curated known-binder FASTA for the target (default: packaged TNF-alpha set).",
+    help="Which curated known-binder set to screen against, by slug "
+    "(default: the registry's default). See --list-targets.",
 )
 @click.option(
-    "--target-metadata",
-    type=click.Path(exists=True, path_type=Path),
-    default=None,
-    help="CSV of per-reference annotations (id, class, source, citation...).",
+    "--list-targets",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_list_targets,
+    help="List the registered known-binder sets and exit.",
 )
 @click.option(
     "-o",
@@ -118,8 +143,7 @@ def _read_submissions(
 )
 def main(
     submissions: Path,
-    target_fasta: Path | None,
-    target_metadata: Path | None,
+    target_slug: str | None,
     output: Path,
     db_root: str | None,
     skip_prior_art: bool,
@@ -152,13 +176,24 @@ def main(
         cfg.include_patent_arm = False
     if allow_missing_arms:
         cfg.allow_missing_arms = True
+    if target_slug:
+        cfg.target = target_slug
+
+    try:
+        chosen = targets.resolve(cfg.target)
+    except (targets.UnknownTarget, ValueError) as exc:
+        raise click.BadParameter(str(exc), param_hint="--target") from exc
+    # Echoed before the run, not only into report.json: screening a batch against the
+    # wrong target's binder set produces a clean-looking report, so the choice has to be
+    # visible while there is still time to kill the run.
+    click.echo(f"known-binder set: {chosen.describe()}")
+    for problem in targets.check(chosen):
+        click.echo(f"  WARNING: {problem}", err=True)
 
     output.mkdir(parents=True, exist_ok=True)
     screened = screen(
         records,
         cfg=cfg,
-        target_fasta=target_fasta,
-        target_metadata=target_metadata,
         workdir=output / "work",
         skip_prior_art=skip_prior_art,
         declared=declared,

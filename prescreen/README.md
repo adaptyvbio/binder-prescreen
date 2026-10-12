@@ -50,8 +50,11 @@ verbatim in `prescreen/_proteintyper/`, so the same sequence is numbered the sam
 side without the prescreen needing that library on disk. Point `$PROTEINTYPER_SRC` at an
 upstream checkout's `src` directory to run against it instead and check for drift.
 
-The curated TNF-α reference set ships in `prescreen/data/` (`tnfa_binders.fasta`,
-`tnfa_binder_cdrs.csv`). The prior-art databases are resolved from a `:`-separated root
+The curated known-binder sets ship one directory per target under
+`prescreen/data/targets/`, with `targets.json` as the roster; `prescreen --list-targets`
+prints it. Which one a run uses is `--target`, and the choice is echoed at the top of
+every run and recorded in `report.json`'s `target` block. The prior-art arms are the same
+whatever the target. The prior-art databases are resolved from a `:`-separated root
 list — `PRESCREEN_DB_ROOT`, then built-in fallbacks (the workstation mount, then a
 deployed volume). See `reference_manifest.json` for per-arm counts, provenance and
 snapshot dates, and `build_reference_dbs.sh` to rebuild any arm.

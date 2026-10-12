@@ -1,6 +1,6 @@
 ---
 name: binder-prescreen
-description: Run the sequence-level binder prescreen in this repository — screen submitted protein designs for prior art and for known binders of the target. Use when asked to screen, triage or prescreen a batch of designed sequences (FASTA or CSV), to check whether a design copies a known binder or carries a known paratope, to run a prior-art or patent search over candidate binders, or to build the MMseqs2 reference databases the screen needs. Covers installing the package, building the reference arms, running the CLI or the Python API, and checking which arms were actually searched.
+description: Run the sequence-level binder prescreen in this repository — screen submitted protein designs for prior art and for known binders of a target. Use when asked to screen, triage or prescreen a batch of designed sequences (FASTA or CSV), to check whether a design copies a known binder or carries a known paratope, to run a prior-art or patent search over candidate binders, to build the MMseqs2 reference databases the screen needs, or to add a new target's curated binder set. The known-binder arm is per-target and the available targets come from the repository's own registry (`prescreen --list-targets`), so check there rather than assuming which targets exist. Covers installing the package, choosing a target, building the reference arms, running the CLI or the Python API, and checking which arms were actually searched.
 ---
 
 # Running the binder prescreen
@@ -31,7 +31,27 @@ a license key and imports a Qt GUI that fails on a headless machine. The package
 
 Check the install with `uv run prescreen --help`.
 
-## 2. Pick a mode before you run anything
+## 2. Pick the target
+
+The prior-art arms are the same corpora whatever is being screened; only the known-binder
+arm is target-specific. Which curated sets this checkout carries is a question for the
+registry, not for memory:
+
+```bash
+uv run prescreen --list-targets
+```
+
+Pass the slug with `--target`; omitting it uses the registry's default. Always say in
+your report which set was used — the run echoes it, and `report.json`'s `target` block
+records its name, reference count and checksum. Screening a batch against the wrong
+target's binders produces a clean-looking report, which is the one failure mode this
+filter must not have.
+
+If the target you need is not registered, `README.md` → "Adding a target" has the build
+steps; registering is the only way in. Note that the cut points were calibrated on the TNF-α set, so a newly added target
+inherits them untested; say so when reporting its results.
+
+## 3. Pick a mode before you run anything
 
 | | needs | cost |
 |---|---|---|
@@ -45,7 +65,7 @@ databases are not built yet. It cannot answer "is this sequence already public".
 
 The full screen adds the public corpora and answers both. Use it when prior art matters.
 
-## 3. Build the reference databases (only for the full screen)
+## 4. Build the reference databases (only for the full screen)
 
 ```bash
 bash scripts/build_reference_dbs.sh ~/prescreen-dbs                  # all eight arms
@@ -71,7 +91,7 @@ while an arm is missing — rerun the failed arm first, or say which arms were s
 `$PRESCREEN_DB_ROOT` takes a `:`-separated list, first match wins, so a shared mount and a
 few locally built arms can be mixed.
 
-## 4. Run it
+## 5. Run it
 
 ```bash
 uv run prescreen submissions.fasta -o report/
@@ -109,10 +129,13 @@ out  = screen({"sub_001": "EVQLVESGGG..."}, cfg=Config.from_env())
 rows = to_rows(out)        # the report.csv schema, one dict per submission
 ```
 
-`--target` (or `target_fasta=`) points the known-binder arm at a different curated set, so
-the same filter works for any target, not just the one that ships.
+From Python the slug goes on the config, as `cfg.target = "glp1r"`. There is no way to
+screen against a loose FASTA: a set is three files that have to agree with each other, so
+a new target has to be registered. If the user asks for a one-off screen against their own
+binder list, walk them through "Adding a target" in `README.md` rather than looking for a
+flag — there isn't one.
 
-## 5. Before reporting a clean result, check what was searched
+## 6. Before reporting a clean result, check what was searched
 
 A missing arm reads exactly like a sequence with no prior art, so a screen whose database
 root is incomplete **aborts** with `ReferenceDbMissing` naming the arms. If you deliberately

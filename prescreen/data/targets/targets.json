@@ -1,0 +1,23 @@
+{
+  "default": "tnfa",
+  "targets": {
+    "tnfa": {
+      "name": "TNF-alpha",
+      "uniprot": "P01375",
+      "dir": "tnfa",
+      "fasta": "tnfa_binders.fasta",
+      "metadata": "tnfa_binders.csv",
+      "cdr_csv": "tnfa_binder_cdrs.csv",
+      "notes": "Antibody-dominated: 4,964 references, ~3,100 of them Ig chains or Fvs, plus affibodies, monobodies, miniprotein and receptor-derived decoys. The thresholds in PRESCREEN_SPEC.md were calibrated on this set. Coverage gaps: targets/tnfa/tnfa_coverage_gaps.md"
+    },
+    "glp1r": {
+      "name": "GLP-1 receptor",
+      "uniprot": "P43220",
+      "dir": "glp1r",
+      "fasta": "glp1r_binders.fasta",
+      "metadata": "glp1r_binders.csv",
+      "cdr_csv": "glp1r_binder_cdrs.csv",
+      "notes": "Peptide-dominated and much smaller than the TNF-alpha set: 225 references, 215 of them GLP-1 analogue peptides from ChEMBL, plus 7 antibody chains and 3 peptide-Fc fusions. WHOLE-SEQUENCE cut points calibrated on this set 2026-10-12 over 442 fixtures: 50/50 knowns caught, zero false positives on 80 unrelated designs and 6 framework-reuse chimeras, and target_known=0.90 sits mid-plateau, so the inherited values hold. The REGION cut point is still inherited untested - only ~10 fixtures and 6 grafts exercise it, because 215 references are peptides with no CDR to compare; strengthening it needs more anti-GLP1R antibody references, not more fixtures. Two coverage limits: 5 references are 5-mers, below both search paths; 94 contain X (non-standard residues from ChEMBL) and match only where the wildcard lands. Expect no_reference_signal on short submissions - below BLIND_LENGTH=25 the filter refuses to call silence a pass."
+    }
+  }
+}

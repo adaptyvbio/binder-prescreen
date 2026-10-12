@@ -13,7 +13,7 @@ packaged known-binder set has a median length of 108 aa and only 1.3% of entries
 molecule the matching chain is not: a verbatim adalimumab Fab queried as 432 aa against its
 own 219-aa heavy chain scores ``fident = 1.00`` but ``qcov = 0.51``, so the composite is
 0.51 — under ``near_known_sequence`` (0.80), ``known_sequence`` (0.95) and
-``tnf_known_coverage`` (0.80) alike. Those flags are unreachable by construction for any
+``target_known_coverage`` (0.80) alike. Those flags are unreachable by construction for any
 Fab or IgG submitted in template form. Per chain the same query scores 1.00.
 
 Query ids for the search arms are synthetic (``q0c1``, ``q0c2``, ...) rather than derived

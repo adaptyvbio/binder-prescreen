@@ -9,7 +9,7 @@ What each flag means
 --------------------
 ``known_target_binder``
     Whole-sequence match to a curated known binder of the target at or above
-    ``tnf_known``. The submission is an existing anti-target molecule.
+    ``target_known``. The submission is an existing anti-target molecule.
 ``target_region_match``
     The binding region (CDR3 / paratope) matches a known binder's region at or above
     ``region_match`` while the rest of the sequence may differ. This is the grafted-
@@ -25,7 +25,7 @@ What each flag means
     The same whole-sequence match, against any other public reference (PDB, SwissProt,
     PLAbDab, THPdb, patents). Not target-specific: the sequence is simply not new.
 ``target_binder_homolog``
-    Whole-sequence identity to a known binder between ``tnf_homolog`` and ``tnf_known``.
+    Whole-sequence identity to a known binder between ``target_homolog`` and ``target_known``.
     A relative of a known binder rather than a copy.
 ``near_known_sequence``
     Prior-art identity between ``near_known_sequence`` and ``known_sequence``.
@@ -129,7 +129,24 @@ def evaluate(record: dict, cfg: Config) -> dict:
     pa_sim = float(best["similarity_check"]) if best else 0.0
     design_sim = float(best_design["similarity_check"]) if best_design else 0.0
 
-    region_matches = region_exact or region_id >= cfg.region_match
+    # False when the region matched is germline-common - carried by more than
+    # ``region_corpus_max`` sequences in a general antibody corpus - so the match says the
+    # query shares a framework, not a paratope. Still reported, just not load-bearing.
+    # See :func:`prescreen._best_region`.
+    region_decisive = bool(region.get("region_decisive", True))
+    region_matches = region_decisive and (region_exact or region_id >= cfg.region_match)
+    if region_aware and region_compared and not region_decisive and (
+        region_exact or region_id >= cfg.region_match
+    ):
+        context["target_region_match_not_decisive"] = {
+            "reference": region.get("region_reference"),
+            "region_identity": round(region_id, 4),
+            "chain": region.get("region_chain"),
+            "corpus_occurrences": region.get("corpus_occurrences"),
+            "note": "matched region is germline-common in a general antibody corpus, so "
+            "it indicates a shared framework rather than a known paratope; reported as "
+            "context only",
+        }
     if region_aware and not region_compared:
         # Surfaced as context rather than a flag: it changes no verdict, but a reviewer
         # must not read this record's silence on the binding region as a negative result.
@@ -169,12 +186,12 @@ def evaluate(record: dict, cfg: Config) -> dict:
             and not whole.get("region_reference_available", True)
         )
         known_binder = (
-            whole_fident >= cfg.tnf_known_identity
-            and whole_qcov >= cfg.tnf_known_coverage
+            whole_fident >= cfg.target_known_identity
+            and whole_qcov >= cfg.target_known_coverage
             and (region_matches or uncorroborable)
         )
     else:
-        known_binder = whole_sim >= cfg.tnf_known
+        known_binder = whole_sim >= cfg.target_known
     if whole and known_binder:
         flags.append("known_target_binder")
         reasons["known_target_binder"] = {
@@ -195,6 +212,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # whole-sequence category the region restates the whole-sequence number.
     if (
         region_aware
+        and region_decisive
         and region_len >= cfg.region_min_length
         and (region_exact or region_id >= cfg.region_match)
     ):
@@ -283,15 +301,15 @@ def evaluate(record: dict, cfg: Config) -> dict:
             # The framework is public but the paratope is not: exactly the case these
             # competitions permit, so it is context and never a flag.
             context["known_framework_new_paratope"] = evidence
-    if whole and whole_sim >= cfg.tnf_homolog:
+    if whole and whole_sim >= cfg.target_homolog:
         evidence = {
             "reference": whole["target"],
             "similarity_check": round(whole_sim, 4),
             "region_identity": round(region_id, 4) if region_aware else None,
         }
         if not region_aware:
-            # A band, deliberately: above tnf_known the whole-sequence rule already fired.
-            if whole_sim < cfg.tnf_known:
+            # A band, deliberately: above target_known the whole-sequence rule already fired.
+            if whole_sim < cfg.target_known:
                 flags.append("target_binder_homolog")
                 reasons["target_binder_homolog"] = evidence
         elif region_id < cfg.region_match and "known_target_binder" not in flags:
@@ -299,7 +317,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
             # different binding region: scaffold reuse, which is allowed. When the region
             # *does* match, target_region_match above already carries the finding.
             #
-            # No upper bound here. Bounding it at tnf_known assumed anything above that cut
+            # No upper bound here. Bounding it at target_known assumed anything above that cut
             # would be caught by known_target_binder, but that flag also needs the region to
             # match — so a submission 90%+ identical to a known binder with an unmatched
             # region fell out of both rules and the target arm said nothing at all. The

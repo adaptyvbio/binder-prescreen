@@ -18,12 +18,11 @@ compare, and framework identity is reported as context rather than scored.
 Typical use::
 
     from prescreen import Config, screen
-    results = screen({"sub_001": "QVQLVESGG..."}, Config.from_env(),
-                     target_fasta="data/tnfa_binders.fasta")
+    results = screen({"sub_001": "QVQLVESGG..."}, Config.from_env())
 
 or from the shell::
 
-    prescreen submissions.fasta --target data/tnfa_binders.fasta -o report
+    prescreen submissions.fasta --target tnfa -o report
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ from pathlib import Path
 
 from . import cluster as _cluster
 from . import flags as _flags
-from . import mmseqs, priorart, refdb
+from . import mmseqs, priorart, refdb, targets
 from .chains import merge_whole, split_submissions
 from .classify import classify, compare_declared
 from .config import Config, resolve_db_root
@@ -53,32 +52,65 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
-def _best_region(reference, ann: dict) -> dict:
-    """Best target-region comparison across a submission's input chains.
+def _best_region(reference, ann: dict, cfg: Config) -> dict:
+    """Target-region comparison across a submission's chains, preferring real evidence.
 
-    Each chain is compared in its own right and the strongest result wins — an exact match
-    beats any inexact one. ``supporting_exact_regions`` is summed across chains, so a Fab
-    scored chain-by-chain corroborates exactly as it does scored whole.
+    Each submitted chain is compared in its own right. What decides the result is not
+    which chain it came from but whether the reference region it matched is
+    *discriminative*: a CDR carried by hundreds of unrelated antibodies is germline, and
+    matching it says the query uses a common framework, not that it carries a known
+    paratope.
+
+    Measured on the TNF-alpha set: the kappa CDR-L3 ``QQRSNWPLT`` occurs in 358 of 350k
+    PLAbDab antibodies, and every one of those 358 was called a known TNF-alpha binder -
+    as was a Fab whose every heavy-chain CDR had been replaced by poly-glycine, because
+    its germline light chain outscored its own novel heavy chain.
+
+    Gating on the chain instead was tried and is worse: CDR-L3 is the only region a lone
+    VL domain has, so blocking light chains cost 93 true detections on the TNF-alpha
+    calibration while this rule costs 14.
+
+    Corpus frequency is a proxy for "germline", and it is only needed when the reference
+    has nothing better to say for itself. A region curated as belonging to a *named,
+    confirmed* binder is evidence whatever its count: adalimumab's CDR-H3 occurs 201 times
+    in PLAbDab precisely because PLAbDab contains adalimumab and its biosimilars, and
+    discounting it would discard the single most recognisable anti-TNF paratope there is.
+    Frequency decides only for the anonymous rows - a single-parent patent claim with no
+    agent attached, which is what every germline CDR in this index looks like.
+
+    A non-discriminative match is still returned and reported - with
+    ``region_decisive=False`` - so a reviewer sees what matched and why it was discounted.
     """
     best, support = None, 0
+    limit = cfg.region_corpus_max
+
+    def discriminative(hit: dict) -> bool:
+        if hit.get("binder_status") == "confirmed_binder" or hit.get("named_agent"):
+            return True
+        occ = hit.get("corpus_occurrences")
+        return not limit or occ is None or occ < limit
+
+    def rank(hit: dict) -> tuple:
+        return (
+            discriminative(hit),
+            bool(hit.get("region_exact")),
+            hit.get("region_identity") or -1.0,
+        )
+
     for regions in ann["chain_regions"]:
         hit = reference.compare_region(
             regions, ann["category"], ann["region_kind"]
         ).as_dict()
         support += hit.get("supporting_exact_regions") or 0
-        if best is None:
-            best = hit
-            continue
-        rank = (hit.get("region_exact"), hit.get("region_identity") or -1.0)
-        prev = (best.get("region_exact"), best.get("region_identity") or -1.0)
-        if rank > prev:
+        if best is None or rank(hit) > rank(best):
             best = hit
     if best is None:
         return {}
     best["supporting_exact_regions"] = support
+    best["region_decisive"] = rank(best)[0]
     return best
 
 
@@ -133,8 +165,6 @@ def _annotate(
 def screen(
     records: dict,
     cfg: Config | None = None,
-    target_fasta: str | Path | None = None,
-    target_metadata: str | Path | None = None,
     workdir: str | Path | None = None,
     skip_prior_art: bool = False,
     declared: dict | None = None,
@@ -146,10 +176,8 @@ def screen(
             chains with ``:``, as in the Proteinbase submission template; the chains are
             concatenated before screening (no linker is inserted, so a Fab still
             classifies as a Fab rather than as an scFv).
-        cfg: thresholds and database locations; ``Config.from_env()`` if omitted.
-        target_fasta: curated known-binder FASTA for the target. Defaults to
-            ``cfg.target_fasta`` or the packaged ``data/tnfa_binders.fasta``.
-        target_metadata: optional CSV of per-reference annotations (class, source, ...).
+        cfg: thresholds, database locations and ``target`` (the known-binder set's
+            slug); ``Config.from_env()`` if omitted.
         workdir: scratch directory; a temporary one is used if omitted.
         skip_prior_art: run only the target arm (useful when the public databases are not
             mounted, e.g. in a unit test).
@@ -201,14 +229,10 @@ def screen(
     annotations = _annotate(records, declared, chain_counts, chain_seqs)
     timing["classify_regions"] = round(time.time() - t, 2)
 
-    data_dir = Path(__file__).parent / "data"
-    target_path = target_fasta or cfg.target_fasta or (data_dir / "tnfa_binders.fasta")
-    cdr_path = cfg.target_cdr_csv or (data_dir / "tnfa_binder_cdrs.csv")
-    reference = TargetReference(
-        target_path,
-        metadata=target_metadata or cfg.target_metadata,
-        cdr_csv=cdr_path if Path(cdr_path).exists() else None,
-    )
+    target_set = targets.resolve(cfg.target)
+    cdr_path = target_set.cdr_csv if target_set.cdr_csv and target_set.cdr_csv.exists() else None
+    meta_path = target_set.metadata if target_set.metadata and target_set.metadata.exists() else None
+    reference = TargetReference(target_set.fasta, metadata=meta_path, cdr_csv=cdr_path)
     t = time.time()
     reference.ensure_annotations()
     timing["reference_annotation"] = round(time.time() - t, 2)
@@ -228,18 +252,18 @@ def screen(
             workdir / "target",
             mmseqs_bin=cfg.mmseqs_bin,
             threads=cfg.threads,
-            identity_cut=cfg.tnf_known_identity,
-            coverage_cut=cfg.tnf_known_coverage,
+            identity_cut=cfg.target_known_identity,
+            coverage_cut=cfg.target_known_coverage,
         ),
         index,
-        identity_cut=cfg.tnf_known_identity,
-        coverage_cut=cfg.tnf_known_coverage,
+        identity_cut=cfg.target_known_identity,
+        coverage_cut=cfg.target_known_coverage,
     )
     timing["target_whole"] = round(time.time() - t, 2)
 
     t = time.time()
     target_region = {
-        qid: _best_region(reference, ann)
+        qid: _best_region(reference, ann, cfg)
         for qid, ann in annotations.items()
     }
     timing["target_region"] = round(time.time() - t, 2)
@@ -321,8 +345,13 @@ def screen(
         "timing": timing,
         "config": cfg.as_dict(),
         "target": {
-            "name": cfg.target_name,
-            "fasta": str(target_path),
+            "slug": target_set.slug,
+            "name": target_set.name,
+            "uniprot": target_set.uniprot,
+            "fasta": str(target_set.fasta),
+            # Named explicitly: a run whose region arm had no index reports the same
+            # "no region match" as one that checked and found nothing.
+            "cdr_csv": str(cdr_path) if cdr_path else None,
             "references": len(reference.sequences),
             "checksum": reference.checksum,
         },
@@ -370,7 +399,7 @@ def to_rows(screened: dict) -> list:
                 # The known-binder rule is a conjunction of these two cuts, not a cut on
                 # the composite, so neither can be swept or falsified from the composite
                 # alone. Export both or the calibration cannot check the rule it most needs
-                # to (tnf_known_identity / tnf_known_coverage / the verbatim cuts).
+                # to (target_known_identity / target_known_coverage / the verbatim cuts).
                 "target_fident": round(whole.get("fident", 0.0), 4),
                 "target_qcov": round(whole.get("qcov", 0.0), 4),
                 "target_hit": whole.get("target"),
