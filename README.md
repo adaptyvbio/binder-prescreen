@@ -57,6 +57,10 @@ uv run prescreen examples/submissions.fasta --skip-prior-art  --target tnfa -o r
 
 Replace `--target <slug>` to pick a target other than the default. 
 
+`examples/` carries a worked set per target — `submissions.fasta` (TNF-α) and
+`submissions_glp1r.fasta` (GLP-1R). Each record's description line states the construct
+and the verdict it should produce, so they double as a smoke test.
+
 ```
 screened 4 sequences -> report/report.csv
   known_target_binder          3
