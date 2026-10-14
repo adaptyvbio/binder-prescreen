@@ -89,6 +89,13 @@ class Config:
     # existed every one of those 358 was called a known TNF-alpha binder. Such a match is
     # still reported, it just cannot decide a verdict on its own. 0 disables the rule.
     region_corpus_max: int = 100
+    # An exact copy of a known binder sitting inside a larger construct. For antibody and
+    # scaffold formats this is normally only shared framework, so it is recorded as
+    # context rather than flagged - but that reasoning covers an 8-residue scrap, not a
+    # verbatim copy of a named or confirmed binder. Above this length, and only when the
+    # reference carries that attribution, the containment is flagged instead: a known
+    # GLP-1 agonist fused to a carrier VHH is the known agonist, whatever it is fused to.
+    verbatim_fragment_min_length: int = 20
 
     # --- paratope-aware prior art ---
     # A whole-sequence match to a public reference only means the *molecule* is known if

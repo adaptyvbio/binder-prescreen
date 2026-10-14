@@ -184,6 +184,7 @@ variables. Defaults:
 | parameter | value | meaning |
 |-----------|-------|---------|
 | `region_corpus_max` | 100 | a region carried by this many sequences in a general antibody corpus is germline, and cannot decide a match on its own (a *named or confirmed* binder's region is exempt) |
+| `verbatim_fragment_min_length` | 20 | an exact copy of a *named or confirmed* binder at least this long inside a larger construct is flagged even for antibody formats, where a shorter containment is only shared framework |
 | `target_known_identity` / `target_known_coverage` | 0.90 / 0.80 | antibody known-binder (identity AND coverage) |
 | `target_known` | 0.90 | non-antibody known-binder (composite) |
 | `region_match` | 0.80 | binding-region (CDR3 / paratope) match |

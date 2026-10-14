@@ -236,7 +236,18 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # categories — peptides and miniproteins, where a verbatim copy has no region arm to
     # catch it. The match is still recorded as context for region-aware categories.
     if substring:
-        if region_aware:
+        # The demotion below is right for a short framework-derived scrap, which is a
+        # substring of any same-class framework and would fire on every antibody. It is
+        # wrong for a verbatim copy of an attributed binder: a known GLP-1 agonist fused
+        # to a carrier VHH types as a nanobody, so the region arm compares the VHH's CDRs,
+        # finds nothing, and vetoes the known-binder call - while the agonist sits inside
+        # the construct, already found, recorded and ignored. Measured: exendin-4 joined
+        # to a VHH by a (G4S)3 linker passed both arms.
+        promote = (
+            substring.get("attributed")
+            and (substring.get("matched_length") or 0) >= cfg.verbatim_fragment_min_length
+        )
+        if region_aware and not promote:
             context["framework_contains_reference_fragment"] = substring
         else:
             flags.append("verbatim_target_fragment")

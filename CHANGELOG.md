@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 - 2026-10-14
+
+### Fixed
+- **A known binder fused to a carrier domain escaped the screen.** A verbatim GLP-1
+  agonist joined to a nanobody by a linker passed both arms: the construct types as an
+  antibody, so the paratope check compared the nanobody's CDRs and vetoed the
+  known-binder call, while the agonist sat inside it already found and recorded as
+  context. An exact copy of a named or confirmed binder of at least 20 residues is now
+  flagged wherever it is carried.
+
 ## 0.2.0 - 2026-10-12
 
 ### Fixed

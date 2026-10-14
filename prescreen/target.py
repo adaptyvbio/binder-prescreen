@@ -329,23 +329,36 @@ class TargetReference:
         return best
 
     def substring_match(self, seq: str) -> dict | None:
-        """Exact containment of the query (or a reference) in the other, either direction."""
+        """Exact containment of the query (or a reference) in the other, either direction.
+
+        The strongest containment wins, not the first one found: a named or confirmed
+        binder ahead of an anonymous claim, then the longer match. What this returns is
+        what :mod:`prescreen.flags` judges, and a 39-residue copy of a confirmed agonist
+        and an 8-residue scrap of framework are not the same finding.
+        """
         if len(seq) < MIN_SUBSTRING:
             return None
+        best = None
         for ref_id, ref_seq in self.sequences.items():
             if seq in ref_seq:
-                return {
-                    "reference": ref_id,
-                    "direction": "query_in_reference",
-                    "matched_length": len(seq),
-                }
-            if len(ref_seq) >= MIN_SUBSTRING and ref_seq in seq:
-                return {
-                    "reference": ref_id,
-                    "direction": "reference_in_query",
-                    "matched_length": len(ref_seq),
-                }
-        return None
+                hit = {"reference": ref_id, "direction": "query_in_reference",
+                       "matched_length": len(seq)}
+            elif len(ref_seq) >= MIN_SUBSTRING and ref_seq in seq:
+                hit = {"reference": ref_id, "direction": "reference_in_query",
+                       "matched_length": len(ref_seq)}
+            else:
+                continue
+            fields = self.parse_header(ref_id)
+            hit["binder_status"] = fields.get("binder_status") or None
+            hit["named_agent"] = fields.get("named_agent") or None
+            hit["reference_class"] = fields.get("class") or None
+            hit["attributed"] = bool(
+                hit["named_agent"] or hit["binder_status"] == "confirmed_binder"
+            )
+            rank = (hit["attributed"], hit["matched_length"])
+            if best is None or rank > (best["attributed"], best["matched_length"]):
+                best = hit
+        return best
 
     # -- region arm -----------------------------------------------------------------
     def compare_cdrs(self, query_regions: dict) -> dict:
