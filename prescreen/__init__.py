@@ -52,7 +52,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 
 def _best_region(reference, ann: dict, cfg: Config) -> dict:
@@ -269,7 +269,10 @@ def screen(
     timing["target_region"] = round(time.time() - t, 2)
 
     t = time.time()
-    substrings = {qid: reference.substring_match(seq) for qid, seq in records.items()}
+    substrings = {
+        qid: reference.substring_match(seq, corpus_max=cfg.substring_corpus_max)
+        for qid, seq in records.items()
+    }
     timing["target_substring"] = round(time.time() - t, 2)
 
     prior = {}
@@ -379,6 +382,12 @@ def to_rows(screened: dict) -> list:
                 "length": rec["length"],
                 "category": rec["category"],
                 "category_confidence": rec["category_confidence"],
+                # Why the antibody numbering declined, when it did. JSON-only before, so
+                # a reviewer reading report.csv could not tell a sequence that was
+                # checked and is not an antibody from one that could not be checked.
+                "antibody_numbering_reason": (
+                    rec.get("category_evidence") or {}
+                ).get("antibody_numbering_reason"),
                 "declared_class": rec["declared_class"],
                 "declared_class_match": rec["declared_class_match"],
                 "n_chains": rec["n_chains"],

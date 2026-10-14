@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 - 2026-10-14
+
+### Fixed
+- **Designed antibodies with a shortened CDR2 were not recognised as antibodies.** One
+  length band required every CDR to be at least 3 residues, so an Fv whose CDR2 had been
+  truncated to 1-2 residues was typed as a small protein: the paratope arm never ran on
+  it, and it was flagged instead on universal framework it happened to contain. The
+  numbering itself was never the problem - these score 0.945-1.000 identity with all four
+  conserved IMGT anchors. CDR1 and CDR2 length is now advisory, as it always should have
+  been; the anchors and the identity floors are what exclude a non-antibody. This also
+  corrects a shark VNAR in the curated set, a class that has no CDR2 by construction.
+- **Framework fragments in the curated set could flag any antibody.** USPTO sequence
+  listings enumerate framework segments as separate entries, so the TNF-alpha set held
+  `GTLVTVSS` (heavy-chain FR4, present in 25% of all antibodies), VH FR1 and VL FR3 as if
+  they were binders. References that common no longer support a containment match, unless
+  they belong to a named or confirmed binder.
+
+### Changed
+- A sequence that could not be numbered now says why, in `report.csv` and in the record's
+  context, instead of silently becoming a small protein. A category decided on length
+  alone no longer reports confidence 1.0.
+
 ## 0.2.1 - 2026-10-14
 
 ### Fixed

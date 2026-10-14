@@ -328,7 +328,24 @@ class TargetReference:
                     best[row["query"]] = row
         return best
 
-    def substring_match(self, seq: str) -> dict | None:
+    def _corpus_occurrences(self, ref_id: str) -> int | None:
+        """How common this reference is in a general antibody corpus, if annotated.
+
+        ``None`` means unmeasured, which is treated as distinctive - an un-annotated set
+        behaves exactly as it did before the column existed.
+        """
+        meta = self.metadata.get(self.parse_header(ref_id).get("id") or "")
+        if not meta:
+            return None
+        raw = str(meta.get("corpus_occurrences") or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(float(raw))
+        except ValueError:
+            return None
+
+    def substring_match(self, seq: str, corpus_max: int | None = None) -> dict | None:
         """Exact containment of the query (or a reference) in the other, either direction.
 
         The strongest containment wins, not the first one found: a named or confirmed
@@ -340,6 +357,19 @@ class TargetReference:
             return None
         best = None
         for ref_id, ref_seq in self.sequences.items():
+            fields = self.parse_header(ref_id)
+            attributed = bool(
+                (fields.get("named_agent") or "")
+                or fields.get("binder_status") == "confirmed_binder"
+            )
+            # Framework, not a binder. Skipping it here rather than at curation time keeps
+            # the reference set as curated and the judgement in one place - and an
+            # attributed reference is never skipped, however common, because a famous
+            # drug's sequence is common precisely by being famous.
+            if corpus_max and not attributed:
+                occ = self._corpus_occurrences(ref_id)
+                if occ is not None and occ > corpus_max:
+                    continue
             if seq in ref_seq:
                 hit = {"reference": ref_id, "direction": "query_in_reference",
                        "matched_length": len(seq)}
@@ -348,13 +378,11 @@ class TargetReference:
                        "matched_length": len(ref_seq)}
             else:
                 continue
-            fields = self.parse_header(ref_id)
             hit["binder_status"] = fields.get("binder_status") or None
             hit["named_agent"] = fields.get("named_agent") or None
             hit["reference_class"] = fields.get("class") or None
-            hit["attributed"] = bool(
-                hit["named_agent"] or hit["binder_status"] == "confirmed_binder"
-            )
+            hit["attributed"] = attributed
+            hit["corpus_occurrences"] = self._corpus_occurrences(ref_id)
             rank = (hit["attributed"], hit["matched_length"])
             if best is None or rank > (best["attributed"], best["matched_length"]):
                 best = hit

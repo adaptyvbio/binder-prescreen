@@ -11,9 +11,11 @@ is already present in a known antibody (near-identity match) or is novel.
 It relies on antpack (https://github.com/jlparkI/AntPack) for IMGT/Kabat/etc. numbering and
 """
 # ----------------------------------------------------------------------------------
-# Vendored verbatim from the upstream library (commit a02fae8), except where marked
-# `vendored:`. Do not edit to fix a bug here - fix it upstream and re-copy, so both
-# copies keep giving the same numbering and the same identities.
+# Vendored from the upstream library (commit a02fae8), except where marked `vendored:`.
+# Prefer fixing a bug upstream and re-copying, so both copies keep giving the same
+# numbering and the same identities. CDR_LENGTH_BANDS below is a deliberate exception,
+# marked and explained at its definition: it was rejecting real designed antibodies, and
+# the prescreen cannot wait on an upstream release to stop doing that.
 # ----------------------------------------------------------------------------------
 
 from __future__ import annotations
@@ -44,7 +46,17 @@ MIN_ANCHORS = 3
 
 # Plausible CDR lengths. Non-antibodies that clear the anchor test tend to fail here,
 # usually with an empty or single-residue CDR3.
-CDR_LENGTH_BANDS = {"cdr1": (3, 20), "cdr2": (3, 20), "cdr3": (3, 35)}
+#
+# vendored: CDR1 and CDR2 lose their lower bound (upstream has 3 for both). They are
+# germline-shared and only corroborate a CDR3 match, so their length is advisory - it
+# must not decide whether a domain is an antibody at all. A submitted Fv with a
+# deliberately truncated 2-residue CDR2 numbers at 0.945-1.000 identity with all four
+# conserved IMGT anchors, and upstream still rejected it; the prescreen then typed it as
+# `small_protein` and never ran the paratope arm on it. What excludes a non-antibody is
+# the anchor count and the identity floors: measured over affibody, monobody,
+# miniprotein and shuffled-VHH controls, none is held out by these bands. CDR3 keeps its
+# band, because the paratope arm needs one to compare.
+CDR_LENGTH_BANDS = {"cdr1": (0, 20), "cdr2": (0, 20), "cdr3": (3, 35)}
 
 _PAIRED_TYPES = {"scfv", "antibody", "mab", "fab"}
 _SINGLE_TYPES = {"nanobody", "vhh", "sdab", "vh", "single"}

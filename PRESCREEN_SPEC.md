@@ -195,7 +195,7 @@ variables. Defaults:
 
 ### Calibration
 
-A labelled set of 1,026 sequences was built (`calibrate.py`) from a stratified sample of
+A labelled set of 1,028 sequences was built (`calibrate.py`) from a stratified sample of
 the curated binders: verbatim knowns, a 2–35 % random-substitution mutant series, grafts
 (a known CDR3 spliced onto a different framework of the same class), framework-reuse
 chimeras (a known framework carrying a scrambled region), published designs against other
@@ -206,15 +206,15 @@ Pass rate by class (`calibration_table.csv`):
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
 | mutant 2 % / 5 % | 236 | 0 % / 1 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 9 % / 29 % / 96 % | graded — a heavily rewritten binder is a new molecule |
-| **grafted known CDR3** | 60 | **2 %** | 59 of 60 grafts onto a new framework are caught — the case whole-sequence misses |
-| **reused framework** | 60 | **57 %** | correctly passed; a further 35 % flag only as in-batch duplicates. The remaining 5 are a fixture limitation, not a filter error — see below |
+| mutant 10 % / 20 % / 35 % | 354 | 12 % / 30 % / 97 % | graded — a heavily rewritten binder is a new molecule |
+| **grafted known CDR3** | 61 | **3 %** | 59 of 61 grafts onto a new framework are caught — the case whole-sequence misses |
+| **reused framework** | 61 | **57 %** | correctly passed; a further 33 % flag only as in-batch duplicates. The remaining 6 are a fixture limitation, not a filter error — see below |
 | unrelated design | 80 | 0 % | **not a usable negative** — see below |
 | shuffled control | 118 | 98 % | composition-matched negative |
 
 The binding-region arm is the separator: region identity to the nearest known binder has
 median **1.00 for grafts** (known paratope present) versus **0.44 for reused frameworks**
-and **0.27 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 97 % of
+and **0.30 for unrelated designs**. The 0.80 region cut sits cleanly in that gap — 97 % of
 grafts fall above it, 8 % of framework-reuse and 1 % of unrelated cases do.
 
 **The five flagged framework-reuse rows are a fixture limitation.** Every one of them has

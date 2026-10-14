@@ -15,9 +15,15 @@ let a region above ``region_corpus_max`` decide a verdict. The corpus should be 
 target-agnostic antibody set - PLAbDab is what this was measured on - precisely because
 its *lack* of relation to the target is what makes a high count mean "germline".
 
+The same counting applies to a *binder* set, where the problem has the same shape: USPTO
+sequence listings enumerate framework segments as separate entries, so a curated set can
+end up holding ``GTLVTVSS`` (heavy-chain FR4, in 86,712 of 350,350 PLAbDab antibodies) as
+if it were a binder. Pass ``--column sequence`` for that file.
+
 Usage::
 
     annotate_cdr_corpus.py --cdrs <index.csv> --corpus <antibodies.fasta> [--jobs 8]
+    annotate_cdr_corpus.py --cdrs <binders.csv> --column sequence --corpus <antibodies.fasta>
 """
 
 from __future__ import annotations
@@ -72,12 +78,30 @@ def main() -> None:
     ap.add_argument("--cdrs", required=True, help="CDR index CSV to annotate in place")
     ap.add_argument("--corpus", required=True, help="general antibody FASTA")
     ap.add_argument("--jobs", type=int, default=8)
+    ap.add_argument(
+        "--column", default="cdr_seq",
+        help="column holding the sequence to count ('sequence' for a binder set)",
+    )
+    ap.add_argument(
+        "--max-length", type=int, default=0,
+        help="skip rows longer than this (0 = no limit). A reference too long to sit "
+        "inside a submission cannot cause a spurious containment, so counting it is "
+        "wasted work on a 5,000-row binder set.",
+    )
     ap.add_argument("--out", default=None, help="default: overwrite --cdrs")
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.cdrs)))
+    col = args.column
+    if col not in rows[0]:
+        raise SystemExit(f"{args.cdrs} has no {col!r} column; columns: {list(rows[0])}")
     fields = [f for f in rows[0] if f != FIELD] + [FIELD]
-    patterns = sorted({(r["cdr_seq"] or "").strip().upper() for r in rows if r["cdr_seq"].strip()})
+    def _seq(row: dict) -> str:
+        return (row.get(col) or "").strip().upper()
+    patterns = sorted({
+        _seq(r) for r in rows
+        if _seq(r) and (not args.max_length or len(_seq(r)) <= args.max_length)
+    })
     lines = corpus_lines(Path(args.corpus))
     try:
         with ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -86,7 +110,12 @@ def main() -> None:
         lines.unlink(missing_ok=True)
 
     for r in rows:
-        r[FIELD] = counts.get((r["cdr_seq"] or "").strip().upper(), 0)
+        # A row skipped by --max-length keeps whatever it had rather than being reset to
+        # 0, which would read as "measured, never seen" instead of "not measured".
+        if _seq(r) in counts:
+            r[FIELD] = counts[_seq(r)]
+        else:
+            r.setdefault(FIELD, "")
 
     out = Path(args.out or args.cdrs)
     with out.open("w", newline="") as fh:
@@ -94,13 +123,16 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
 
-    hot = sorted(rows, key=lambda r: -int(r[FIELD]))[:5]
-    never = sum(1 for r in rows if int(r[FIELD]) == 0)
-    print(f"annotated {len(rows)} rows -> {out}")
-    print(f"  never seen in corpus: {never}  ({never * 100 // len(rows)}%)")
-    print("  most common regions:")
+    scored = [r for r in rows if str(r.get(FIELD, "")).strip() != ""]
+    hot = sorted(scored, key=lambda r: -int(r[FIELD]))[:5]
+    never = sum(1 for r in scored if int(r[FIELD]) == 0)
+    ident = "cdr_id" if "cdr_id" in rows[0] else "id"
+    print(f"annotated {len(scored)} of {len(rows)} rows -> {out}")
+    if scored:
+        print(f"  never seen in corpus: {never}  ({never * 100 // len(scored)}%)")
+    print("  most common:")
     for r in hot:
-        print(f"    {r['cdr_id']:14s} {r['cdr_seq']:16s} {r[FIELD]}")
+        print(f"    {r[ident]:14s} {_seq(r)[:34]:36s} {r[FIELD]}")
 
 
 if __name__ == "__main__":

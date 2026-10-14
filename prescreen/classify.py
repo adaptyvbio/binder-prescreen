@@ -51,6 +51,15 @@ PEPTIDE_MAX = 30
 MINIPROTEIN_MAX = 135
 SMALL_PROTEIN_MAX = 300
 
+#: Shortest sequence that could hold an antibody variable domain. Below this, numbering
+#: producing nothing is the expected answer and not worth explaining.
+MIN_DOMAIN_LENGTH = 80
+
+#: Confidence for a category decided on length alone, after the antibody and scaffold
+#: tests both declined to describe the sequence. Deliberately not 1.0: nothing was
+#: identified, a bucket was chosen.
+LENGTH_ONLY_CONFIDENCE = 0.5
+
 # Camelid VHH hallmark residues at IMGT positions 42, 49, 50, 52 (Vincke et al. 2009
 # J Biol Chem 284:3273; the "tetrad" that replaces the VH-VL interface of a human VH).
 VHH_HALLMARKS = {"42": "FY", "49": "EQ", "50": "RC", "52": "GLF"}
@@ -139,6 +148,34 @@ def compare_declared(declared: str | None, category: str) -> str | None:
 # is TNFR2 + IgG1 Fc) carries a real Fc but no paratope, so it must not be typed as an
 # antibody and compared on CDRs it does not have.
 ANTIBODY_GERMLINE_FLOOR = 0.45
+
+
+def _numbering_reason(seq: str) -> str | None:
+    """Why ``extract_cdrs`` produced nothing for a sequence long enough to be a domain.
+
+    ``cdr_novelty.numbering_is_valid`` already returns a reason - "only 2/4 conserved IMGT
+    anchors present", "cdr3 length 41 outside 3-35" - but every caller inside the vendored
+    module discards it. Re-running the check here is cheap (one numbering pass) and turns
+    a silent fall-through into something a reviewer can act on: an anchor failure means
+    this is not an antibody, while a CDR-length failure means it is one the grammar would
+    not accept, which is a very different thing to be told.
+    """
+    cdr_novelty = proteintyper("cdr_novelty")
+    try:
+        SingleChainAnnotator, _ = antpack_annotators()
+        annotator = SingleChainAnnotator(chains=["H", "K", "L"], scheme="imgt")
+        numbering, pid, chain_name, err = annotator.analyze_seq(seq)
+        if err:
+            return err
+        labels = annotator.assign_cdr_labels(numbering, chain_name)
+        lengths: dict = {}
+        for label, residue in zip(labels, seq):
+            if label.startswith("cdr"):
+                lengths[label] = lengths.get(label, 0) + 1
+        valid, reason = cdr_novelty.numbering_is_valid(seq, numbering, lengths, pid)
+        return None if valid else reason
+    except Exception as exc:  # never let diagnostics break a classification
+        return repr(exc)
 
 
 @dataclass
@@ -283,6 +320,14 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
     else:
         antibody_error = None
     antibody_reject = None
+    # Why the numbering produced nothing. cdr_novelty computes this reason and then drops
+    # it into a debug log that compat._quiet_loguru() disables, so it never reaches a
+    # caller - which is how a grammar rule could reject real designed antibodies for a
+    # year without anyone seeing it. Re-derive it here, for a sequence long enough to hold
+    # a V domain, so "could not check" is distinguishable from "checked, not an antibody".
+    numbering_reason = None
+    if not chains and not antibody_error and n >= MIN_DOMAIN_LENGTH:
+        numbering_reason = _numbering_reason(seq)
     if chains:
         category, evidence = _antibody_subformat(seq, chains)
         pids = [float(c.get("percent_identity") or 0.0) for c in chains.values()]
@@ -344,7 +389,10 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
     return Classification(
         category=category,
         region_kind="whole",
-        confidence=1.0 if category != "unclassified" else 0.0,
+        # A length regime is not an identification. Reporting 1.0 here said "certainly a
+        # small protein" about a sequence the antibody and scaffold tests had both
+        # declined to describe, which reads as confidence about the wrong thing.
+        confidence=LENGTH_ONLY_CONFIDENCE if category != "unclassified" else 0.0,
         length=n,
         evidence={
             "framework_identity": fw,
@@ -358,5 +406,6 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
                 else "no_valid_domain"
             ),
             "antibody_reject": antibody_reject,
+            "antibody_numbering_reason": numbering_reason,
         },
     )

@@ -96,6 +96,15 @@ class Config:
     # reference carries that attribution, the containment is flagged instead: a known
     # GLP-1 agonist fused to a carrier VHH is the known agonist, whatever it is fused to.
     verbatim_fragment_min_length: int = 20
+    # A reference carried by this many sequences in a general antibody corpus is
+    # framework, not a binder, and cannot support a containment match. USPTO sequence
+    # listings enumerate framework segments as separate entries, so curated sets ingest
+    # them: GTLVTVSS (heavy-chain FR4) sits in the TNF-alpha set and occurs in 86,712 of
+    # 350,350 PLAbDab antibodies, as do VH FR1 and VL FR3. Measured over the 1,715
+    # references under 60 aa, 1,133 never appear in that corpus at all and 49 appear in
+    # over 1% of it - the split is wide, so the exact cut matters little. An attributed
+    # reference (named agent or confirmed binder) is exempt, as everywhere else.
+    substring_corpus_max: int = 100
 
     # --- paratope-aware prior art ---
     # A whole-sequence match to a public reference only means the *molecule* is known if

@@ -147,6 +147,20 @@ def evaluate(record: dict, cfg: Config) -> dict:
             "it indicates a shared framework rather than a known paratope; reported as "
             "context only",
         }
+    # An antibody-shaped sequence the numbering refused. The paratope arm did not run,
+    # so "no region match" here means "not looked at", and a reviewer who reads this row
+    # as a clean paratope is reading a check that never happened. Context, not a flag: it
+    # changes no verdict, it says what the verdict does not cover.
+    numbering_reason = (record.get("category_evidence") or {}).get(
+        "antibody_numbering_reason"
+    )
+    if numbering_reason:
+        context["antibody_numbering_failed"] = {
+            "reason": numbering_reason,
+            "category": record.get("category"),
+            "note": "sequence was not recognised as an antibody domain, so the paratope "
+            "arm did not run; it was judged on whole-sequence evidence only",
+        }
     if region_aware and not region_compared:
         # Surfaced as context rather than a flag: it changes no verdict, but a reviewer
         # must not read this record's silence on the binding region as a negative result.
