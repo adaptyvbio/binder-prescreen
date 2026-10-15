@@ -206,7 +206,7 @@ Pass rate by class (`calibration_table.csv`):
 |-------|---|--------|---------|
 | known binder | 118 | **0 %** | every verbatim known binder flagged |
 | mutant 2 % / 5 % | 236 | 0 % / 1 % | lightly mutated knowns still caught |
-| mutant 10 % / 20 % / 35 % | 354 | 12 % / 30 % / 97 % | graded — a heavily rewritten binder is a new molecule |
+| mutant 10 % / 20 % / 35 % | 354 | 12 % / 30 % / 96 % | graded — a heavily rewritten binder is a new molecule |
 | **grafted known CDR3** | 61 | **3 %** | 59 of 61 grafts onto a new framework are caught — the case whole-sequence misses |
 | **reused framework** | 61 | **57 %** | correctly passed; a further 33 % flag only as in-batch duplicates. The remaining 6 are a fixture limitation, not a filter error — see below |
 | unrelated design | 80 | 0 % | **not a usable negative** — see below |

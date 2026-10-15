@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import mmseqs
-from .cdrref import CdrReference
+from .cdrref import CdrReference, _wildcard_equal
 from .classify import ANTIBODY_CATEGORIES, classify
 from .compat import proteintyper
 from .regions import FOCUS, extract, focus_region, identity_fn_for
@@ -164,6 +165,8 @@ class TargetReference:
         self.sequences = mmseqs.read_fasta(self.fasta)
         self.checksum = _checksum(self.fasta)
         self.metadata = self._load_metadata(metadata)
+        # Compiled lazily by _containment; only X-bearing references ever get one.
+        self._wildcard_patterns: dict = {}
         self.cdrs = CdrReference(cdr_csv) if cdr_csv and Path(cdr_csv).exists() else None
         self.cache_path = (
             Path(cache_path)
@@ -345,6 +348,59 @@ class TargetReference:
         except ValueError:
             return None
 
+    def _containment(self, seq: str, ref_id: str, ref_seq: str) -> dict | None:
+        """Whether ``seq`` and ``ref_seq`` contain one another, with Markush wildcards.
+
+        ``X`` in a *reference* matches any residue; an ``X`` in the submission stays
+        literal. That is the asymmetry of :func:`prescreen.cdrref._wildcard_equal`, and the
+        same ``X`` -> ``.`` expansion ``annotate_cdr_corpus.py`` uses to count how common a
+        reference is - the matcher and the counter have to agree, or
+        ``substring_corpus_max`` would gate on different semantics than it was measured
+        with. Plain ``in`` made every ``X``-bearing reference unmatchable: no submitted
+        sequence contains the letter ``X``.
+
+        A wildcard match is only evidence where the reference actually said something, so
+        it counts by the reference residues compared *literally*, which must clear the
+        same ``MIN_SUBSTRING`` floor a literal reference does, and ``matched_length``
+        reports that literal agreement rather than the span. Without this, Markush
+        frameworks with every CDR written as a run of ``X`` - ``TNFB02763`` is 150 ``X`` in
+        232 residues - swallowed any short submission whole: 9 of 118 shuffled
+        calibration controls matched one while agreeing with none of its residues.
+        """
+        wildcard = "X" in ref_seq
+        if len(seq) <= len(ref_seq):
+            n = len(seq)
+            if not wildcard:
+                if seq in ref_seq:
+                    return {"reference": ref_id, "direction": "query_in_reference",
+                            "matched_length": n, "matched_sequence": seq}
+            else:
+                for i in range(len(ref_seq) - n + 1):
+                    window = ref_seq[i:i + n]
+                    literal = n - window.count("X")
+                    if literal >= MIN_SUBSTRING and _wildcard_equal(seq, window):
+                        return {"reference": ref_id, "direction": "query_in_reference",
+                                "matched_length": literal, "matched_sequence": seq}
+        literal = len(ref_seq) - ref_seq.count("X")
+        if literal >= MIN_SUBSTRING and len(ref_seq) <= len(seq):
+            if not wildcard:
+                if ref_seq in seq:
+                    return {"reference": ref_id, "direction": "reference_in_query",
+                            "matched_length": len(ref_seq), "matched_sequence": ref_seq}
+                return None
+            pattern = self._wildcard_patterns.get(ref_id)
+            if pattern is None:
+                # Amino-acid letters carry no regex metacharacters, so this is safe.
+                pattern = re.compile(ref_seq.replace("X", "."))
+                self._wildcard_patterns[ref_id] = pattern
+            m = pattern.search(seq)
+            if m:
+                # The residues the submission actually has there, not the pattern: with
+                # wildcards a reviewer could not reconstruct them from the reference.
+                return {"reference": ref_id, "direction": "reference_in_query",
+                        "matched_length": literal, "matched_sequence": m.group()}
+        return None
+
     def substring_match(self, seq: str, corpus_max: int | None = None) -> dict | None:
         """Exact containment of the query (or a reference) in the other, either direction.
 
@@ -370,13 +426,8 @@ class TargetReference:
                 occ = self._corpus_occurrences(ref_id)
                 if occ is not None and occ > corpus_max:
                     continue
-            if seq in ref_seq:
-                hit = {"reference": ref_id, "direction": "query_in_reference",
-                       "matched_length": len(seq)}
-            elif len(ref_seq) >= MIN_SUBSTRING and ref_seq in seq:
-                hit = {"reference": ref_id, "direction": "reference_in_query",
-                       "matched_length": len(ref_seq)}
-            else:
+            hit = self._containment(seq, ref_id, ref_seq)
+            if hit is None:
                 continue
             hit["binder_status"] = fields.get("binder_status") or None
             hit["named_agent"] = fields.get("named_agent") or None

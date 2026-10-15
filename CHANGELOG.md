@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 - 2026-10-15
+
+### Fixed
+- **Patent references written as Markush claims could never match.** A reference like
+  `HXEGTXTSDXX`, where `X` means any residue, was compared literally, so the containment
+  check could only find it in a sequence that contains the letter `X` - which no
+  submission does. `X` in a reference is now a wildcard, as it already was for CDRs, and
+  the report shows the residues that actually matched. A wildcard match counts only by
+  the reference residues it agreed with literally, which must reach the same 8-residue
+  floor as any reference - otherwise a Markush framework written as runs of `X` would
+  match any short sequence whole.
+
 ## 0.3.0 - 2026-10-14
 
 ### Fixed
