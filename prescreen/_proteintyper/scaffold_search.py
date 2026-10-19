@@ -17,12 +17,6 @@ Pipeline (mirrors ``plabdab_search`` stage for stage):
 Only step 4 is scaffold-specific. Steps 3 and 5 reuse the antibody machinery, and the
 1-4 novelty scoring is the antibody rule set with renamed constants.
 """
-# ----------------------------------------------------------------------------------
-# Vendored verbatim from the upstream library (commit a02fae8), except where marked
-# `vendored:`. Do not edit to fix a bug here - fix it upstream and re-copy, so both
-# copies keep giving the same numbering and the same identities.
-# ----------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import os
@@ -38,7 +32,7 @@ from .scaffold_cdr import (
 )
 
 # Prebuilt mmseqs databases: the three framework seeds, and one reference db per family.
-# vendored: the upstream default is a fixed deployment path; here it follows
+# The upstream default is a fixed deployment path; here it follows
 # $PRESCREEN_DB_ROOT so the scaffold databases sit beside the prior-art arms. Note that
 # the prescreen itself only reads this module's constants and darpin_repeat_identity -
 # none of the searching functions below are on its path, so these databases are optional.
@@ -273,12 +267,12 @@ def analyze_scaffold_novelty(
         try:
             from proteintyper_lib.paratope import identify_paratope
         except ModuleNotFoundError as exc:
-            # Not vendored: it pulls in the structure stack (foldseek, TMalign).
+            # The upstream `paratope` module pulls in the structure stack (foldseek, TMalign).
             # The prescreen is sequence-only and never passes `structure_path`, so
             # this branch is unreachable there; install the upstream library to use it.
             raise RuntimeError(
                 "structural paratope recovery needs the upstream `paratope` module, "
-                "which is not vendored into prescreen"
+                "which is not installed"
             ) from exc
 
         resolved = identify_paratope(

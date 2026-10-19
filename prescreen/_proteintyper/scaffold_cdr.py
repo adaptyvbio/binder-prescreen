@@ -19,12 +19,6 @@ known members (see the feasibility report):
   DARPin     6 randomized paratope positions + 1 framework position per 33-aa repeat
   monobody   BC, DE and FG loops of the 94-aa fibronectin 10th FN3 domain
 """
-# ----------------------------------------------------------------------------------
-# Vendored verbatim from the upstream library (commit a02fae8), except where marked
-# `vendored:`. Do not edit to fix a bug here - fix it upstream and re-copy, so both
-# copies keep giving the same numbering and the same identities.
-# ----------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 import re
@@ -72,10 +66,49 @@ DARPIN_PARATOPE = (2, 3, 5, 13, 14, 33)
 # residue after it.
 DARPIN_ANCHOR = re.compile(r"G[AS]DVN[AV]")
 
+# Centyrin and fc_tfr are prescreen-local families, added for the TfR1 target
+# set; they are not in the upstream library. The TfR1 references include Centyrin-type FN3
+# domains and engineered IgG1 Fc variants, neither of which any existing family projects a
+# paratope for, so without these they would be compared on whole sequence alone - where an
+# engineered Fc is ~95% identical to wild-type IgG1 Fc and every Fc-bearing submission
+# scores as a known binder. Upstreaming them into the library is a follow-up.
+
+# Centyrin / Tencon-type FN3, the consensus of the CD71-binding FN3 domains in the tfr1
+# set (3 rounds of re-alignment). Measured framework identity to FNfn10 is 0.25-0.36, far
+# below the 0.85 monobody gate, so these cannot ride on the monobody family.
+CENTYRIN_REF = (
+    "LPAPKNLVVSRVTEDSARLSWTAPDAAFDSFYIAYAEPRPDGEAIVLTVPGSERSYDLTGLKPG"
+    "TEYSVLIHGVKGGLLSSPLSAIFTT"
+)
+# 1-based positions whose consensus frequency is below 0.6 across that family: the C/CD and
+# F/FG strand faces that side-binding Centyrin libraries diversify, not the FNfn10 loops.
+CENTYRIN_MASK = (32, 34, 36, 38, 39, 40, 41, 68, 70, 72, 78, 79, 81)
+
+# Human IgG1 hinge-CH2-CH3, EU 216-447 (secreted form). EU numbering n = position + 215.
+FC_REF = (
+    "EPKSCDKTHTCPPCPAPELLGGPSVFLFPPKPKDTLMISRTPEVTCVVVDVSHEDPEVKFNWYV"
+    "DGVEVHNAKTKPREEQYNSTYRVVSVLTVLHQDWLNGKEYKCKVSNKALPAPIEKTISKAKGQP"
+    "REPQVYTLPPSRDELTKNQVSLTCLVKGFYPSDIAVEWESNGQPENNYKTTPPVLDSDGSFFLY"
+    "SKLTVDKSRWQQGNVFSCSVMHEALHNHYTQKSLSLSPGK"
+)
+# The TfR-binding CH3 patches seen in the 781 Fc references of the tfr1 set: positions
+# mutated in >=10% of them, excluding the effector/half-life edits that say nothing about
+# TfR binding (LALA, YTE, P329G, knob-into-hole, LS). EU numbering:
+# [345, 346, 347, 349, 350, 380, 382, 384, 386, 387, 388, 389, 390,
+#  413, 415, 416, 421, 422, 424, 426, 437, 438, 439, 440].
+FC_TFR_MASK = (
+    130, 131, 132, 134, 135, 165, 167, 169, 171, 172, 173, 174, 175,
+    198, 200, 201, 206, 207, 209, 211, 222, 223, 224, 225,
+)
+
+
 SCAFFOLD_REFS = {
     "affibody": Z_DOMAIN,
     "monobody": FN3_DOMAIN,
     "darpin": DARPIN_REF,
+    # See the note above.
+    "centyrin": CENTYRIN_REF,
+    "fc_tfr": FC_REF,
 }
 
 
@@ -136,6 +169,10 @@ def framework_identity(family: str, query: str) -> float:
         mask = set(AFFIBODY_MASK)
     elif family == "monobody":
         mask = {p for s, e in MONOBODY_LOOPS.values() for p in range(s, e + 1)}
+    elif family == "centyrin":
+        mask = set(CENTYRIN_MASK)
+    elif family == "fc_tfr":
+        mask = set(FC_TFR_MASK)
     else:
         mask = set()
         for off in darpin_repeat_offsets(ref):
@@ -222,10 +259,77 @@ def project_darpin(seq: str) -> dict:
     }
 
 
+# The centyrin and fc_tfr projectors - see the note beside CENTYRIN_REF.
+
+
+def _local_aligner() -> PairwiseAligner:
+    a = _aligner()
+    a.mode = "local"
+    return a
+
+
+_LOCAL = _local_aligner()
+
+#: An Fc is a carrier, not a paratope: a submission that fuses a new binder to one has to be
+#: searched as its parts. Below this coverage of, and identity to, FC_REF a span is not an Fc.
+FC_SPAN_COVERAGE = 0.8
+FC_SPAN_IDENTITY = 0.8
+
+
+def fc_span(seq: str) -> tuple | None:
+    """``(start, end)`` of an IgG hinge-CH2-CH3 inside ``seq``, or ``None``.
+
+    Found by local alignment to :data:`FC_REF`, so an engineered Fc - a handful of CH3
+    substitutions - is still detected. What makes it a *carrier* rather than the molecule
+    itself is decided by the caller, from how much sequence lies outside the span.
+    """
+    if len(seq) < int(FC_SPAN_COVERAGE * len(FC_REF)):
+        return None
+    aln = _LOCAL.align(FC_REF, seq)[0]
+    blocks = list(zip(aln.aligned[0], aln.aligned[1]))
+    if not blocks:
+        return None
+    matched = sum(
+        1
+        for (r0, r1), (q0, q1) in blocks
+        for i, j in zip(range(r0, r1), range(q0, q1))
+        if FC_REF[i] == seq[j]
+    )
+    aligned = sum(r1 - r0 for (r0, r1), _ in blocks)
+    if aligned < FC_SPAN_COVERAGE * len(FC_REF) or matched / aligned < FC_SPAN_IDENTITY:
+        return None
+    return blocks[0][1][0], blocks[-1][1][1]
+
+
+def project_centyrin(seq: str) -> dict:
+    pmap = _position_map(CENTYRIN_REF, seq)
+    pick = "".join(pmap.get(p, "-") for p in CENTYRIN_MASK)
+    half = len(CENTYRIN_MASK) // 2
+    return {"cdr1": pick[:half], "cdr2": pick[half:], "cdr3": pick}
+
+
+def project_fc_tfr(seq: str) -> dict:
+    """Fc paratope = the residues that DIFFER from wild-type IgG1 at the patch positions.
+
+    The TfR-binding Fc variants carry their engineering in one of two CH3 patches, and a
+    variant from the smaller patch differs from wild type at only 3-9 of the 24 mask
+    positions - so a plain identity over all 24 would score an unmodified Fc at 0.875
+    against it. Emitting only the substituted residues makes wild type the empty paratope
+    (reported as ``-``, which matches nothing) while a copied patch stays identical.
+    """
+    pmap = _position_map(FC_REF, seq)
+    muts = "".join(
+        pmap[p] for p in FC_TFR_MASK if p in pmap and pmap[p] != FC_REF[p - 1]
+    )
+    return {"cdr1": "", "cdr2": "", "cdr3": muts or "-"}
+
 _PROJECTORS = {
     "affibody": project_affibody,
     "monobody": project_monobody,
     "darpin": project_darpin,
+    # See the note above.
+    "centyrin": project_centyrin,
+    "fc_tfr": project_fc_tfr,
 }
 
 

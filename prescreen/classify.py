@@ -75,7 +75,10 @@ ANTIBODY_CATEGORIES = (
     "vh_domain",
     "single_domain_antibody",
 )
-SCAFFOLD_CATEGORIES = ("affibody", "monobody", "darpin")
+SCAFFOLD_CATEGORIES = ("affibody", "monobody", "darpin", "centyrin", "fc_tfr")
+#: An Fc-family call only when the Fc is most of the sequence: a binder fused to an Fc must
+#: keep its own category, or its paratope would be replaced by the Fc patch.
+FC_MAX_LENGTH_FRACTION = 1.15
 
 # ``framework_identity`` normalises by the number of ALIGNED framework positions, not by
 # the reference length, so it carries no coverage term: a query that aligns to a handful
@@ -110,7 +113,9 @@ DECLARED_CLASS_MAP = {
     "light_chain": {"igg", "fab", "fv", "single_domain_antibody"},
     "antibody": {"igg", "fab", "fv", "scfv", "nanobody", "vh_domain"},
     "affibody": {"affibody"},
-    "monobody": {"monobody"},
+    "monobody": {"monobody", "centyrin"},
+    "centyrin": {"centyrin", "monobody"},
+    "fc": {"fc_tfr"},
     "darpin": {"darpin"},
     "peptide": {"peptide", "miniprotein"},
     "miniprotein": {"miniprotein", "peptide", "small_protein"},
@@ -119,7 +124,7 @@ DECLARED_CLASS_MAP = {
     # format, so it agrees with every non-antibody category.
     "single_chain": {
         "peptide", "miniprotein", "small_protein", "unclassified",
-        "affibody", "monobody", "darpin",
+        "affibody", "monobody", "darpin", "centyrin", "fc_tfr",
     },
 }
 
@@ -363,6 +368,8 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
         for family in SCAFFOLD_CATEGORIES
     }
     eligible = {f: v for f, v in fw.items() if n >= min_lengths[f]}
+    if n > FC_MAX_LENGTH_FRACTION * len(scaffold_cdr.FC_REF):
+        eligible.pop("fc_tfr", None)
     best_family = max(eligible, key=eligible.get) if eligible else None
     if best_family is not None and fw[best_family] >= gate:
         return Classification(

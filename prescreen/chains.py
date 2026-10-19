@@ -81,6 +81,34 @@ def _spans_in(seq: str, lo: int, hi: int, out: list) -> None:
             _spans_in(seq, g_lo, g_hi, out)
 
 
+#: Sequence outside a detected Fc span that is long enough to be a binder in its own
+#: right. Below this the chain is an Fc, possibly engineered, and stays whole.
+FC_CARRIER_MIN_REMAINDER = 20
+
+
+def fc_carrier_units(seq: str) -> list:
+    """Split a chain into ``[binder..., Fc]`` when an Fc is carrying something else.
+
+    An Fc fused to a new binder is a legitimate submission, but the Fc is most of the
+    sequence: searched whole, the construct scores 0.74-0.90 against any engineered-Fc
+    reference on carrier alone - ``fident`` 0.96 at ``qcov`` 0.77 - which the non-antibody
+    homolog band reads as a relative of a known binder. Searched as parts, the Fc unit is
+    judged on its CH3 patch (``fc_tfr``) and the fused binder on itself.
+
+    Returns ``[]`` when there is no Fc, or when the Fc is the whole chain.
+    """
+    from .compat import proteintyper
+
+    span = proteintyper("scaffold_cdr").fc_span(seq)
+    if span is None:
+        return []
+    start, end = span
+    rest = [seq[:start], seq[end:]]
+    if sum(len(r) for r in rest) < FC_CARRIER_MIN_REMAINDER:
+        return []
+    return [r for r in rest if len(r) >= FC_CARRIER_MIN_REMAINDER] + [seq[start:end]]
+
+
 def variable_domains(seq: str, floor: float | None = None) -> list:
     """The variable domains of ``seq``, N- to C-terminal, or ``[]`` if fewer than two.
 
@@ -167,7 +195,7 @@ def split_submissions(records: dict) -> ChainIndex:
             # those domains; one carrying fewer is left exactly as it is. The linker and
             # any tag between domains belong to neither and are dropped, which is what
             # stops them diluting whole-sequence coverage against single-chain references.
-            units = variable_domains(chain) or [chain]
+            units = variable_domains(chain) or fc_carrier_units(chain) or [chain]
             for d, unit in enumerate(units, start=1):
                 qid = f"q{i}c{k}d{d}"
                 index.queries[qid] = unit

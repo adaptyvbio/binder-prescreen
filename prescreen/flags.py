@@ -82,6 +82,10 @@ FLAG_ORDER = (
 # the length below which we refuse to call silence a pass.
 BLIND_LENGTH = 25
 
+#: Whole-sequence identity AND coverage at which a hit is the reference itself. Used only
+#: to keep a verbatim copy flagged when its region match is exact but germline-common.
+VERBATIM_IDENTITY = 0.99
+
 
 def evaluate(record: dict, cfg: Config) -> dict:
     """Return ``{"verdict": str, "flags": [str], "reasons": {flag: evidence}}``.
@@ -175,6 +179,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # carrying a NEW paratope clears the whole-sequence cut but not the region, and must
     # pass — reusing a published scaffold is allowed. For non-antibody formats
     # (miniprotein, peptide) the whole sequence IS the binder, so the composite suffices.
+    verbatim = False
     if region_aware:
         # Requiring the region to corroborate is right when the region arm had a fair
         # chance to. It did not when the matched reference's class contributes no CDRs to
@@ -199,13 +204,39 @@ def evaluate(record: dict, cfg: Config) -> dict:
             and whole is not None
             and not whole.get("region_reference_available", True)
         )
+        # A germline-common region cannot tell a known binder from a framework that
+        # shares it - except when the submission IS the reference: the whole sequence is
+        # identical and so is the region. Requiring the region to match exactly keeps
+        # the framework-reuse case above out of reach - a swapped CDR3 is never exact.
+        verbatim = (
+            region_compared
+            and region_exact
+            and whole_fident >= VERBATIM_IDENTITY
+            and whole_qcov >= VERBATIM_IDENTITY
+        )
         known_binder = (
             whole_fident >= cfg.target_known_identity
             and whole_qcov >= cfg.target_known_coverage
-            and (region_matches or uncorroborable)
+            and (region_matches or uncorroborable or verbatim)
         )
     else:
         known_binder = whole_sim >= cfg.target_known
+    # A bare-Fc query whose hit shares no engineered CH3 patch with the reference - Fc is
+    # ~95% conserved, so any Fc-bearing reference matches it: the similarity is the
+    # carrier, not the binder. Reported as context, like every other framework-reuse
+    # observation.
+    if whole is not None and whole.get("carrier_explained"):
+        known_binder = False
+        context["known_carrier_new_paratope"] = {
+            "reference": whole["target"],
+            "identity": round(whole_fident, 4),
+            "query_coverage": round(whole_qcov, 4),
+            "carrier_patch_query": whole.get("carrier_patch_query"),
+            "carrier_patch_reference": whole.get("carrier_patch_reference"),
+            "carrier_patch_identity": whole.get("carrier_patch_identity"),
+            "note": "matched an Fc-bearing reference on carrier sequence; the "
+            "submission and the reference share no engineered CH3 patch",
+        }
     if whole and known_binder:
         flags.append("known_target_binder")
         reasons["known_target_binder"] = {
@@ -219,6 +250,9 @@ def evaluate(record: dict, cfg: Config) -> dict:
             # matched reference's class contributes no CDRs to the index. The finding is
             # real but uncorroborated, and a reviewer should see which it is.
             "paratope_corroborated": bool(region_matches),
+            # True when the call rests on the submission being the reference verbatim,
+            # its exact region match being germline-common and so not decisive alone.
+            "verbatim_copy": bool(verbatim and not region_matches),
             "reference_class": whole.get("reference_class"),
         }
     # Known anti-target paratope on any framework: exact CDR3 match, or CDR3 identity at

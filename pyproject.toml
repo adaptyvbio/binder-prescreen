@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tnfa-prescreen"
-version = "0.3.1"
+version = "0.4.0"
 description = "Sequence-level prior-art and known-binder prescreen for protein-design binder competitions"
 readme = "README.md"
 requires-python = ">=3.10"

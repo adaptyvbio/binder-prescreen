@@ -10,14 +10,6 @@ is already present in a known antibody (near-identity match) or is novel.
 
 It relies on antpack (https://github.com/jlparkI/AntPack) for IMGT/Kabat/etc. numbering and
 """
-# ----------------------------------------------------------------------------------
-# Vendored from the upstream library (commit a02fae8), except where marked `vendored:`.
-# Prefer fixing a bug upstream and re-copying, so both copies keep giving the same
-# numbering and the same identities. CDR_LENGTH_BANDS below is a deliberate exception,
-# marked and explained at its definition: it was rejecting real designed antibodies, and
-# the prescreen cannot wait on an upstream release to stop doing that.
-# ----------------------------------------------------------------------------------
-
 from __future__ import annotations
 
 from typing import Optional
@@ -47,7 +39,7 @@ MIN_ANCHORS = 3
 # Plausible CDR lengths. Non-antibodies that clear the anchor test tend to fail here,
 # usually with an empty or single-residue CDR3.
 #
-# vendored: CDR1 and CDR2 lose their lower bound (upstream has 3 for both). They are
+# CDR1 and CDR2 lose their lower bound (upstream has 3 for both). They are
 # germline-shared and only corroborate a CDR3 match, so their length is advisory - it
 # must not decide whether a domain is an antibody at all. A submitted Fv with a
 # deliberately truncated 2-residue CDR2 numbers at 0.945-1.000 identity with all four
@@ -599,12 +591,12 @@ def analyze_cdr_novelty(
         try:
             from proteintyper_lib.paratope import identify_paratope
         except ModuleNotFoundError as exc:
-            # Not vendored: it pulls in the structure stack (foldseek, TMalign).
+            # The upstream `paratope` module pulls in the structure stack (foldseek, TMalign).
             # The prescreen is sequence-only and never passes `structure_path`, so
             # this branch is unreachable there; install the upstream library to use it.
             raise RuntimeError(
                 "structural paratope recovery needs the upstream `paratope` module, "
-                "which is not vendored into prescreen"
+                "which is not installed"
             ) from exc
 
         resolved = identify_paratope(

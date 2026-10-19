@@ -15,12 +15,6 @@ fraction of the chain, so no single number serves classes whose paratopes occupy
 different shares of the molecule. See ``novelty_scale.md`` for the derivation and
 the per-class occupancy tables.
 """
-# ----------------------------------------------------------------------------------
-# Vendored verbatim from the upstream library (commit a02fae8), except where marked
-# `vendored:`. Do not edit to fix a bug here - fix it upstream and re-copy, so both
-# copies keep giving the same numbering and the same identities.
-# ----------------------------------------------------------------------------------
-
 from loguru import logger
 
 # Classification slugs that have CDRs and are eligible for CDR-novelty scoring,

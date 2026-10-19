@@ -291,6 +291,12 @@ is still reported but cannot decide a verdict on its own; a region belonging to 
 or confirmed* binder is exempt, since it is only common because the corpus contains that
 binder. An index without the column behaves as before, so this is additive.
 
+Add `--near-identity 0.80` when the set indexes light chains. The region arm matches at
+0.80 identity, so a CDR-L3 one or two edits from a germline ending is as germline as the
+ending itself but rarely occurs *exactly*; this counts corpus CDR-L3s within that identity
+too. Without it the TfR1 set called 345 of 358 PLAbDab light chains ending `QQRSNWPLT`
+known binders, through a patent light chain ending `QQRSNWPPIT` (30 exact occurrences).
+
 **4. Register it** in `prescreen/data/targets/targets.json`:
 
 ```json

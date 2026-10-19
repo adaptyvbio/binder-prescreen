@@ -37,6 +37,13 @@ from .compat import proteintyper
 from .regions import FOCUS, extract, focus_region, identity_fn_for
 
 MIN_SUBSTRING = 8
+#: A literal (no ``X``) reference shorter than MIN_SUBSTRING may still be matched inside a
+#: query when it is measured as absent from the general antibody corpus
+#: (``corpus_occurrences == 0``): short TfR peptides such as T7 (HAIYPRH, 7 aa) are
+#: distinctive, whereas 6-7-mer framework and germline-CDR scraps are not and stay above
+#: zero occurrences, so they remain below the floor. 6 matches MIN_SEARCHABLE_LENGTH and
+#: the MMseqs2 short-profile k-mer.
+MIN_SUBSTRING_SHORT_REF = 6
 
 
 def known_binder_rank(row: dict, identity_cut: float, coverage_cut: float) -> tuple:
@@ -294,6 +301,7 @@ class TargetReference:
             groups["short" if len(seq) < LENGTH_SPLIT else "standard"][name] = seq
 
         best: dict = {}
+        carrier_query: dict = {}
         for label, group in groups.items():
             if not group:
                 continue
@@ -324,12 +332,50 @@ class TargetReference:
                     self.cdrs is None
                     or row["reference_class"] in self.cdrs.covered_classes
                 )
+                # A query that is a bare Fc - typically the carrier split off a fusion by
+                # :func:`prescreen.chains.fc_carrier_units` - is ~95% identical to the Fc of
+                # ANY Fc-bearing reference, an anti-target IgG heavy chain as much as an
+                # engineered-Fc binder, on carrier alone. Its only evidence is the
+                # engineered CH3 patch, compared directly rather than through the CDR index
+                # (engineered-Fc references contribute no CDRs, so the ``uncorroborable``
+                # waiver in :mod:`prescreen.flags` would otherwise let the match stand).
+                q = row["query"]
+                if q not in carrier_query:
+                    carrier_query[q] = classify(queries[q]).category == "fc_tfr"
+                if carrier_query[q]:
+                    row.update(self._carrier_check(queries[q], row["target"]))
                 prev = best.get(row["query"])
                 if prev is None or known_binder_rank(
                     row, identity_cut, coverage_cut
                 ) > known_binder_rank(prev, identity_cut, coverage_cut):
                     best[row["query"]] = row
         return best
+
+    def _carrier_check(self, query_seq: str, ref_id: str) -> dict:
+        """Is this Fc query's hit explained by the carrier rather than by an engineered patch?
+
+        Both sequences are projected onto the TfR-binding CH3 patch - the substituted
+        residues only, :func:`scaffold_cdr.project_fc_tfr`. A wild-type Fc projects to
+        ``"-"`` and agrees with nothing, so a wild-type query - or a wild-type reference
+        such as an IgG heavy chain - is carrier-explained; a copied patch projects to the
+        same residues and the hit stands on its own evidence.
+        """
+        ref_seq = self.sequences.get(ref_id, "")
+        if not query_seq or not ref_seq:
+            return {}
+        scaffold_cdr = proteintyper("scaffold_cdr")
+        cdr_novelty = proteintyper("cdr_novelty")
+        ref_patch = scaffold_cdr.project_fc_tfr(ref_seq)[FOCUS]
+        q_patch = scaffold_cdr.project_fc_tfr(query_seq)[FOCUS]
+        identity = 0.0 if "-" in (q_patch, ref_patch) else float(
+            cdr_novelty.cdr_identity(q_patch, ref_patch)
+        )
+        return {
+            "carrier_patch_query": q_patch,
+            "carrier_patch_reference": ref_patch,
+            "carrier_patch_identity": round(identity, 4),
+            "carrier_explained": identity < 0.8,
+        }
 
     def _corpus_occurrences(self, ref_id: str) -> int | None:
         """How common this reference is in a general antibody corpus, if annotated.
@@ -348,7 +394,9 @@ class TargetReference:
         except ValueError:
             return None
 
-    def _containment(self, seq: str, ref_id: str, ref_seq: str) -> dict | None:
+    def _containment(
+        self, seq: str, ref_id: str, ref_seq: str, floor: int = MIN_SUBSTRING
+    ) -> dict | None:
         """Whether ``seq`` and ``ref_seq`` contain one another, with Markush wildcards.
 
         ``X`` in a *reference* matches any residue; an ``X`` in the submission stays
@@ -382,7 +430,7 @@ class TargetReference:
                         return {"reference": ref_id, "direction": "query_in_reference",
                                 "matched_length": literal, "matched_sequence": seq}
         literal = len(ref_seq) - ref_seq.count("X")
-        if literal >= MIN_SUBSTRING and len(ref_seq) <= len(seq):
+        if literal >= floor and len(ref_seq) <= len(seq):
             if not wildcard:
                 if ref_seq in seq:
                     return {"reference": ref_id, "direction": "reference_in_query",
@@ -422,18 +470,25 @@ class TargetReference:
             # the reference set as curated and the judgement in one place - and an
             # attributed reference is never skipped, however common, because a famous
             # drug's sequence is common precisely by being famous.
+            occ = self._corpus_occurrences(ref_id)
             if corpus_max and not attributed:
-                occ = self._corpus_occurrences(ref_id)
                 if occ is not None and occ > corpus_max:
                     continue
-            hit = self._containment(seq, ref_id, ref_seq)
+            # A 6-7 aa reference is only distinctive enough to be matched inside a larger
+            # query when the corpus has never seen it; see MIN_SUBSTRING_SHORT_REF.
+            floor = (
+                MIN_SUBSTRING_SHORT_REF
+                if occ == 0 and "X" not in ref_seq
+                else MIN_SUBSTRING
+            )
+            hit = self._containment(seq, ref_id, ref_seq, floor=floor)
             if hit is None:
                 continue
             hit["binder_status"] = fields.get("binder_status") or None
             hit["named_agent"] = fields.get("named_agent") or None
             hit["reference_class"] = fields.get("class") or None
             hit["attributed"] = attributed
-            hit["corpus_occurrences"] = self._corpus_occurrences(ref_id)
+            hit["corpus_occurrences"] = occ
             rank = (hit["attributed"], hit["matched_length"])
             if best is None or rank > (best["attributed"], best["matched_length"]):
                 best = hit

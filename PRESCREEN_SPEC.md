@@ -32,23 +32,38 @@ For each submission, in order (`prescreen.screen`):
    ones. A chain with fewer than two surviving domains is left whole. Hits are aggregated
    back to one record per submission, each carrying the chain and domain that found it.
 
+   A chain with no variable domains but an IgG hinge-CH2-CH3 inside it, and at least
+   `FC_CARRIER_MIN_REMAINDER` (20) residues outside it, is split into the fused binder(s)
+   and the Fc (`fc_carrier_units`). Searched whole, a peptide-Fc or miniprotein-Fc fusion is
+   mostly Fc and matches any Fc-bearing reference on carrier alone; split, the fused binder
+   is judged on itself and the Fc on its engineered CH3 patch (step 4).
+
    In the curated set, 151 of 4,964 references are genuinely multi-domain: 108 dual-variable
    heavy chains, 19 dual-variable light chains and 24 multivalent VHHs, ozoralizumab among
    them.
 
 1. **Classify** (`classify.py`) — molecule category from sequence: antibody formats
    (Fv / scFv / Fab / IgG / nanobody / VH-domain) via antpack IMGT numbering; alternative
-   scaffolds (affibody / monobody / DARPin) via framework identity to the canonical
-   reference, gated at 0.85; otherwise a length regime (peptide / miniprotein /
-   small_protein). The category sets the `region_kind` that chooses the binding region.
+   scaffolds (affibody / monobody / DARPin / Centyrin-type FN3 / engineered Fc,
+   `fc_tfr`) via framework identity to the canonical reference, gated at 0.85 — `fc_tfr`
+   only for a query no longer than 1.15× an Fc, so a whole IgG heavy chain stays an
+   antibody; otherwise a length regime (peptide / miniprotein / small_protein). The category sets the `region_kind` that chooses the binding region.
 2. **Extract the binding region** (`regions.py`, `cdrref.py`) — antibody CDRs (IMGT),
    projected scaffold paratope, or the whole sequence for a plain peptide/miniprotein.
+   An engineered Fc's paratope is the residues that *differ* from wild-type IgG1 at the
+   TfR-binding CH3 patch positions, so a wild-type Fc projects to the empty paratope `-`.
 3. **Prior-art arm** (`priorart.py`, `refdb.py`) — batched MMseqs2 against the public
    corpora, with a separate sensitive pass for queries < 50 aa, plus a paratope-aware
    re-check of the top hits (§3).
 4. **Target-binder arm** (`target.py`) — whole-sequence search against the curated
    known-binder set, exact-substring containment, and binding-region comparison against
-   the known paratopes (§3).
+   the known paratopes (§3). Containment needs 8 literal residues, or 6 for a reference
+   with no `X` that the antibody corpus has never seen (`corpus_occurrences` = 0), which
+   is what lets a 7-aa TfR peptide such as T7 be found inside a larger design. A query
+   unit typed `fc_tfr` has its whole-sequence hit re-checked on the CH3 patch: unless
+   query and reference carry the same engineered patch (identity ≥ 0.8), the hit is
+   explained by the carrier and is reported as `known_carrier_new_paratope` context
+   instead of a known-binder call.
 5. **Within-batch clustering** (`cluster.py`) — flags duplicate submissions in the batch.
 6. **Verdict** (`flags.py`) — the ordered flag logic in §2.
 
@@ -91,6 +106,15 @@ keeps that honest since a 40-aa entry cannot score highly against a 14-aa CDR3.
 Where a class still contributes no CDRs, a whole-sequence match to it cannot be
 corroborated, so the known-binder rule stands on the whole-sequence evidence alone and the
 evidence records `paratope_corroborated: false`.
+
+A region carried by more than `region_corpus_max` (100) antibodies in a general corpus is
+germline-common and cannot decide a call, however well it matches; the match is reported
+as `target_region_match_not_decisive` context. For CDR-L3 the count can include corpus
+endings within the region-match identity (`annotate_cdr_corpus.py --near-identity`), since
+that is how the arm matches; the TfR1 index is annotated this way. One exception keeps a
+resubmitted reference flagged: a whole-sequence hit at ≥ 0.99 identity and coverage whose
+region matches *exactly* is `known_target_binder` with `verbatim_copy: true`. A
+framework-reuse chimera cannot reach it, because a swapped CDR3 is never an exact match.
 
 ### The governing rule: antibody formats are judged on the paratope
 
@@ -163,6 +187,15 @@ points reproduce their TNF behaviour on it — 50/50 knowns caught, no false pos
 mid-plateau — so they are now measured on both sets. `region_match` is not: only ~10
 fixtures and 6 grafts exercise the region arm there, because 215 of its 225 references
 are peptides with no CDR to compare. That value remains TNF-only evidence.
+
+`tfr1` has been through it too (2026-10-19, 927 fixtures, on the full 6,696-reference set
+this copy is one KEGG reference short of): 103/105 verbatim knowns caught (the two misses
+are 5-aa references), no target-arm flag on 80 unrelated designs or on 358 germline light
+chains, `target_known` mid-plateau from 0.86 to 0.94 and `region_match` flat from 0.70 to
+0.84 - so both are measured on this set as well. `known_target_binder` at 2/5/10/20/35 %
+mutation is 78/77/51/0/0 % against TNF's 96/95/54/0/0: the set carries ~500
+light-chain-only patent claims, and a lightly mutated one whose CDR-L3 is germline-common
+cannot be told from a germline light chain.
 
 
 4,964 unique known/claimed TNF-α binders with per-entry provenance: 28 confirmed binders,
