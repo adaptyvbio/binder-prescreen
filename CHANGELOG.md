@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1 - 2026-10-19
+
+### Fixed
+- **Every wild-type-Fc fusion was called a known sequence.** 0.4.0 splits an Fc off its
+  fused binder and searches the parts separately, and a wild-type IgG1 Fc is in PDB
+  verbatim, so the prior-art arms called any new peptide-, miniprotein- or VHH-Fc fusion
+  `known_sequence` on the carrier alone. A wild-type Fc carrier's prior-art hits are now
+  left out of the call and reported as `known_carrier_prior_art` context; an engineered
+  Fc keeps them, since its CH3 patch is the binder, and a bare Fc submitted on its own
+  is still a known sequence.
+
 ## 0.4.0 - 2026-10-19
 
 ### Added

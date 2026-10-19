@@ -37,8 +37,9 @@ from . import flags as _flags
 from . import mmseqs, priorart, refdb, targets
 from .chains import merge_whole, split_submissions
 from .classify import classify, compare_declared
+from .compat import proteintyper
 from .config import Config, resolve_db_root
-from .regions import extract, focus_region
+from .regions import FOCUS, extract, focus_region
 from .target import TargetReference
 
 __all__ = [
@@ -52,7 +53,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 
 def _best_region(reference, ann: dict, cfg: Config) -> dict:
@@ -112,6 +113,33 @@ def _best_region(reference, ann: dict, cfg: Config) -> dict:
     best["supporting_exact_regions"] = support
     best["region_decisive"] = rank(best)[0]
     return best
+
+
+def _carrier_prior_art(per_unit: dict, index) -> dict:
+    """Take a wild-type Fc carrier's prior-art hits out of the decision.
+
+    An Fc split off a fusion is searched on its own, and a wild-type IgG1 Fc is public
+    verbatim (PDB holds dozens), so its hits would call every Fc fusion a known sequence
+    on the carrier alone. An engineered Fc keeps its hits: its CH3 patch is the binder.
+    Returns ``{submission_id: [hit summary, ...]}`` for the dropped hits, as context.
+    """
+    scaffold_cdr = proteintyper("scaffold_cdr")
+    out: dict = {}
+    for qid in index.carriers:
+        if scaffold_cdr.project_fc_tfr(index.queries[qid])[FOCUS] != "-":
+            continue
+        part = per_unit.pop(qid, None)
+        best = (part or {}).get("best")
+        if best:
+            out.setdefault(index.submission_of(qid), []).append({
+                "chain": index.chain_of(qid),
+                "domain": index.domain_of(qid),
+                "reference": best.get("target"),
+                "db": best.get("db"),
+                "identity": round(float(best.get("fident") or 0.0), 4),
+                "query_coverage": round(float(best.get("qcov") or 0.0), 4),
+            })
+    return out
 
 
 def _annotate(
@@ -286,9 +314,11 @@ def screen(
         )
     if not skip_prior_art and cfg.db_root:
         t = time.time()
-        prior = priorart.merge_chains(
-            priorart.search(index.queries, cfg, workdir / "priorart"), index, cfg
-        )
+        per_unit = priorart.search(index.queries, cfg, workdir / "priorart")
+        carrier_hits = _carrier_prior_art(per_unit, index)
+        prior = priorart.merge_chains(per_unit, index, cfg)
+        for sid, hits in carrier_hits.items():
+            prior.setdefault(sid, {})["carrier_explained"] = hits
         timing["prior_art"] = round(time.time() - t, 2)
         # Paratope-aware prior art: re-number the top hits' own sequences and compare
         # binding regions, so a shared framework is not mistaken for a known molecule.

@@ -150,6 +150,9 @@ class ChainIndex:
     lengths: dict = field(default_factory=dict)
     #: Submission ids whose sequence was empty once cleaned; dropped from the batch.
     dropped: list = field(default_factory=list)
+    #: Query ids that are an Fc split off a fusion by :func:`fc_carrier_units` - carrier,
+    #: not the submitted binder.
+    carriers: set = field(default_factory=set)
 
     def chain_of(self, query_id: str) -> int:
         return self.owner[query_id][1]
@@ -195,12 +198,17 @@ def split_submissions(records: dict) -> ChainIndex:
             # those domains; one carrying fewer is left exactly as it is. The linker and
             # any tag between domains belong to neither and are dropped, which is what
             # stops them diluting whole-sequence coverage against single-chain references.
-            units = variable_domains(chain) or fc_carrier_units(chain) or [chain]
+            domains = variable_domains(chain)
+            carried = [] if domains else fc_carrier_units(chain)
+            units = domains or carried or [chain]
             for d, unit in enumerate(units, start=1):
                 qid = f"q{i}c{k}d{d}"
                 index.queries[qid] = unit
                 index.owner[qid] = (sid, k, d)
                 index.by_submission[sid].append(qid)
+            if carried:
+                # fc_carrier_units puts the Fc last
+                index.carriers.add(f"q{i}c{k}d{len(units)}")
     return index
 
 

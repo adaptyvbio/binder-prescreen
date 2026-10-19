@@ -111,6 +111,12 @@ def evaluate(record: dict, cfg: Config) -> dict:
 
     context: dict = {}
     pa_region = pa.get("region") or {}
+    if pa.get("carrier_explained"):
+        context["known_carrier_prior_art"] = {
+            "hits": pa["carrier_explained"],
+            "note": "the wild-type Fc this submission is fused to is public; its hits "
+            "are carrier, not the binder, and were left out of the prior-art call",
+        }
     # For antibody formats and alternative scaffolds the framework dominates the
     # sequence, so a whole-sequence match to a public reference (or to a known binder)
     # is usually framework sharing, which these competitions allow. Those categories are
