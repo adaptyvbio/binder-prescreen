@@ -58,8 +58,8 @@ uv run prescreen examples/submissions.fasta --skip-prior-art  --target tnfa -o r
 Replace `--target <slug>` to pick a target other than the default. 
 
 `examples/` carries a worked set per target — `submissions.fasta` (TNF-α) and
-`submissions_glp1r.fasta` (GLP-1R). Each record's description line states the construct
-and the verdict it should produce, so they double as a smoke test.
+`submissions_glp1r.fasta` (GLP-1R); `tfr1` has none yet. Each record's description line
+states the construct and the verdict it should produce, so they double as a smoke test.
 
 ```
 screened 4 sequences -> report/report.csv
@@ -116,6 +116,7 @@ uv run prescreen examples/submissions.csv  --target tnfa --no-patent -o report/
 |---|---|---|---|---|
 | `tnfa` | TNF-α | [P01375](https://www.uniprot.org/uniprotkb/P01375) | 4,964 | antibody-dominated — ~3,100 Ig chains and Fvs, plus affibodies, monobodies, miniproteins, receptor-derived decoys |
 | `glp1r` | GLP-1 receptor | [P43220](https://www.uniprot.org/uniprotkb/P43220) | 225 | peptide-dominated — 215 GLP-1 analogue peptides, 7 antibody chains, 3 peptide-Fc fusions |
+| `tfr1` | Transferrin receptor 1 (TfR1/CD71) | [P02786](https://www.uniprot.org/uniprotkb/P02786) | 6,695 | mixed — ~3,000 claimed peptides/loops, ~1,600 Ig chains and Fvs, 150 VNARs, 39 VHHs, FN3 domains, engineered Fc/CH3 patches, miniproteins, natural ligands |
 
 `tnfa` is the default, so omitting `--target` screens against TNF-α. 
 
@@ -123,13 +124,26 @@ uv run prescreen examples/submissions.csv  --target tnfa --no-patent -o report/
 **The thresholds were calibrated on `tnfa`, and the whole-sequence ones re-checked on
 `glp1r`** (442 fixtures: 50/50 knowns caught, no false positives on 80 unrelated designs
 or 6 framework-reuse chimeras), so they hold for both. The **binding-region** cut point is
-still TNF-only: `glp1r` has 7 antibody chains, so barely any fixture exercises it.
+still TNF-only on `glp1r`: it has 7 antibody chains, so barely any fixture exercises it.
+
+**`tfr1` re-checked both** (927 fixtures, all eight arms): 103/105 verbatim knowns caught,
+no target-arm flag on 80 unrelated designs or 358 germline light chains, and both the
+whole-sequence and the binding-region cut points sit mid-plateau, so the inherited values
+hold there too.
 
 Two things to expect on `glp1r` specifically. Some of its peptides carry `X` from ChEMBL's
 non-standard residues and match only where the wildcard lands. And short submissions come
 back `no_reference_signal` rather than `pass` — below 25 aa the filter refuses to call
 silence a pass, because a short sequence finding nothing may be a true negative or a blind
 search.
+
+Three things to expect on `tfr1`. Its 203 references under 6 aa cannot be matched by any
+arm. A binder fused to a wild-type Fc is judged on the binder: the Fc's own hits are
+reported as `known_carrier_prior_art` / `known_carrier_new_paratope` context, while an
+engineered TfR-binding Fc is compared on its CH3 patch. And a lightly mutated copy of one
+of its ~500 light-chain-only patent claims is caught less often than on `tnfa` (77-78 % at
+2-5 % mutation, against 95-96 %), because a germline-common CDR-L3 cannot decide a call;
+a verbatim copy still can (`verbatim_copy`).
 
 From Python, the slug goes on the config:
 
@@ -238,6 +252,16 @@ Named agents include dulaglutide, survodutide, efinopegdutide, efsubaglutide alf
 maridebart cafraglutide. Smaller and peptide-dominated where `tnfa` is
 antibody-dominated, so it inherits the TNF-calibrated thresholds untested and carries the
 two coverage limits noted above.
+
+**`tfr1`** — **6,695** references covering the formats TfR1 is attacked with: Ig V
+domains, Fvs and Fabs, VNARs, VHHs, engineered Fc/CH3 patches, Centyrin-type FN3 domains,
+cystine-dense and bicyclic peptides, designed miniproteins and natural ligands, plus
+**3,326** CDR-table rows annotated against PLAbDab (CDR-L3 with `--near-identity 0.80`).
+53 are confirmed binders (structure, reported assay or an INN), the rest disclosed claims;
+there are no tested non-binders. By primary source: JPO (3,705), USPTO (2,483), EPO (178),
+KIPO (157), PLAbDab (146), PDB (17), literature (8), NCBI patents (1). Named agents include
+trontinemab, pabinafusp, lepunafusp, posnafusp, delpacibart and zeleciment. One KEGG
+DRUG-only reference is omitted from this copy, because KEGG may not be redistributed.
 
 
 ### Adding a target
