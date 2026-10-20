@@ -242,16 +242,13 @@ found *not* to bind, plus **4,075** deduplicated anti-TNF IMGT CDRs. By primary 
 USPTO patents (4,423), PLAbDab incl. Thera-SAbDab (479), Proteinbase (35), PDB (25, all
 contact-verified against P01375), UniProt (1), THPdb (1). Named agents are resolved for
 adalimumab, infliximab, certolizumab, golimumab, etanercept, ozoralizumab and others.
-Composition and the 15 numbered coverage gaps:
-[`tnfa_coverage_gaps.md`](prescreen/data/targets/tnfa/tnfa_coverage_gaps.md).
 
 **`glp1r`** — **225** references: 215 GLP-1 analogue peptides (ChEMBL), 7 antibody chains
 and 3 peptide-Fc fusions, with **218** CDR-table rows of which 202 are the bare peptides
 carried as chain-agnostic wildcard entries. By primary source: ChEMBL (192), PDB (33).
 Named agents include dulaglutide, survodutide, efinopegdutide, efsubaglutide alfa and
 maridebart cafraglutide. Smaller and peptide-dominated where `tnfa` is
-antibody-dominated, so it inherits the TNF-calibrated thresholds untested and carries the
-two coverage limits noted above.
+antibody-dominated.
 
 **`tfr1`** — **6,695** references covering the formats TfR1 is attacked with: Ig V
 domains, Fvs and Fabs, VNARs, VHHs, engineered Fc/CH3 patches, Centyrin-type FN3 domains,
@@ -260,8 +257,7 @@ cystine-dense and bicyclic peptides, designed miniproteins and natural ligands, 
 53 are confirmed binders (structure, reported assay or an INN), the rest disclosed claims;
 there are no tested non-binders. By primary source: JPO (3,705), USPTO (2,483), EPO (178),
 KIPO (157), PLAbDab (146), PDB (17), literature (8), NCBI patents (1). Named agents include
-trontinemab, pabinafusp, lepunafusp, posnafusp, delpacibart and zeleciment. One KEGG
-DRUG-only reference is omitted from this copy, because KEGG may not be redistributed.
+trontinemab, pabinafusp, lepunafusp, posnafusp, delpacibart and zeleciment.
 
 
 ### Adding a target
