@@ -20,7 +20,14 @@ Two details that change results:
   reference is meaningless, so those are excluded from identity arithmetic and matched
   only by a wildcard-aware exact comparison.
 * **Chain type.** A heavy CDR3 is compared against heavy CDR3s. antpack types some
-  single domains as light-like, so ``K`` and ``L`` are one class ("L").
+  single domains as light-like, so ``K`` and ``L`` are one class ("L"). TCR chains keep
+  their own letters (``A``, ``B``, ``D``, ``G``), and a TCR's CDR1/CDR2 are compared
+  against the same chain only. Every CDR3 - antibody or TCR, either chain - is compared
+  against every TCR CDR3: a TCR CDR3 lifted into an antibody (a TCR-mimic) or onto the
+  other TCR chain is still the known paratope. Measured on VDJdb against the KRAS-G12D/V
+  set, this costs almost nothing: of 179k CDR3s of other specificities, 8 come within 0.80
+  of a reference on the opposite chain - most of them beta-like ``ASS...`` CDR3s filed
+  under alpha - against 4,348 on their own chain.
 """
 
 from __future__ import annotations
@@ -31,7 +38,8 @@ from pathlib import Path
 
 from .compat import proteintyper
 
-CANONICAL_CHAIN = {"H": "H", "K": "L", "L": "L"}
+CANONICAL_CHAIN = {"H": "H", "K": "L", "L": "L", "A": "A", "B": "B", "D": "D", "G": "G"}
+TCR_CHAINS = ("A", "B", "D", "G")
 REGION_LABELS = ("cdr1", "cdr2", "cdr3")
 
 
@@ -52,6 +60,9 @@ class CdrEntry:
     #: never seen - the distinctive case - and is also the default when the index has not
     #: been annotated, which keeps an un-annotated index behaving as it always did.
     occurrences: int = 0
+    #: The receptors (rows of the source table) this region comes from - set for TCR
+    #: sets, where specificity belongs to an alpha/beta pair, not to either CDR3.
+    receptors: frozenset = frozenset()
 
 
 @dataclass
@@ -120,6 +131,9 @@ class CdrReference:
                     citation=row.get("example_citation") or "",
                     ambiguous="X" in seq,
                     occurrences=int(float(row.get("corpus_occurrences") or 0)),
+                    receptors=frozenset(
+                        r for r in (row.get("receptor_ids") or "").split(";") if r
+                    ),
                 )
                 self.entries.append(entry)
                 self.index.setdefault((entry.region, entry.chain), []).append(entry)
@@ -138,8 +152,55 @@ class CdrReference:
                 )
             )
 
+        self.by_id = {e.cdr_id: e for e in self.entries}
+        # receptor -> {TCR chain: [CDR3 entries]}, for match_pair
+        self.receptor_cdr3: dict = {}
+        for e in self.entries:
+            if e.region == "cdr3" and e.chain in TCR_CHAINS and not e.ambiguous:
+                for r in e.receptors:
+                    self.receptor_cdr3.setdefault(r, {}).setdefault(e.chain, []).append(e)
+
     def __len__(self) -> int:
         return len(self.entries)
+
+    def match_pair(self, cdr3s: dict) -> dict | None:
+        """Best match of a TCR query's two CDR3s against ONE reference receptor.
+
+        ``cdr3s`` is ``{chain: cdr3}`` with two TCR chains (``A`` and ``B``, or ``G`` and
+        ``D``). Each receptor holding a CDR3 on both chains is scored by the *weaker* of the
+        two identities, in the query's orientation or with the chains swapped (a CDR3 moved
+        to the other chain is still that receptor's); the best receptor is returned as
+        ``{"identity", "receptor", "references", "exact"}``, or ``None`` when no receptor
+        has both chains.
+        """
+        cdr_novelty = proteintyper("cdr_novelty")
+        (c1, q1), (c2, q2) = sorted(cdr3s.items())
+
+        def best(q, entries):
+            top = (-1.0, None)
+            for e in entries:
+                v = 1.0 if e.seq == q else float(cdr_novelty.cdr_identity(q, e.seq))
+                if v > top[0]:
+                    top = (v, e)
+            return top
+
+        out = None
+        for receptor, chains in sorted(self.receptor_cdr3.items()):
+            if len(chains) < 2:
+                continue
+            for x, y in ((c1, c2), (c2, c1)):
+                if x not in chains or y not in chains:
+                    continue
+                (i1, e1), (i2, e2) = best(q1, chains[x]), best(q2, chains[y])
+                score = min(i1, i2)
+                if out is None or score > out["identity"]:
+                    out = {
+                        "identity": round(score, 4),
+                        "receptor": receptor,
+                        "references": [e1.cdr_id, e2.cdr_id],
+                        "exact": i1 == 1.0 and i2 == 1.0,
+                    }
+        return out
 
     def counts(self) -> dict:
         return {f"{r}_{c}": len(v) for (r, c), v in sorted(self.index.items())}
@@ -172,6 +233,10 @@ class CdrReference:
             *self.index.get((region, "*"), ()),
             *self.index.get(("*", "*"), ()),
         ]
+        if region == "cdr3":
+            for tcr_chain in TCR_CHAINS:
+                if tcr_chain != chain:
+                    candidates.extend(self.index.get((region, tcr_chain), ()))
         for entry in candidates:
             if entry.seq == query_seq or (
                 entry.ambiguous and _wildcard_equal(query_seq, entry.seq)

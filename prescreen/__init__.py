@@ -53,10 +53,10 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 
-def _best_region(reference, ann: dict, cfg: Config) -> dict:
+def _best_region(reference, ann: dict, cfg: Config, whole: dict | None = None) -> dict:
     """Target-region comparison across a submission's chains, preferring real evidence.
 
     Each submitted chain is compared in its own right. What decides the result is not
@@ -112,7 +112,89 @@ def _best_region(reference, ann: dict, cfg: Config) -> dict:
         return {}
     best["supporting_exact_regions"] = support
     best["region_decisive"] = rank(best)[0]
+    _tcr_pairing(reference, ann, best, cfg, whole)
     return best
+
+
+#: The other chain of a TCR heterodimer.
+TCR_PARTNER = {"A": "B", "B": "A", "D": "G", "G": "D"}
+
+
+def _tcr_pairing(
+    reference, ann: dict, best: dict, cfg: Config, whole: dict | None = None
+) -> None:
+    """A TCR CDR3 match decides through its pair, or through a named binder.
+
+    A TCR's specificity is its alpha/beta pair, and one CDR3 carries a lot of germline:
+    JDI's ``ALSGPSGAGSYQLT`` is TRAV19 joined to the TRAJ28 segment ``GAGSYQLT``, and
+    patent listings hold public CDR3s - US11458191 pair 16's beta, ``ASSLALSYEQY``, is
+    also an EBV EBNA4 TCR's. Measured on VDJdb (2026-06-03) against the KRAS-G12D/V
+    HLA-A*11:01 set (83 CDR3s): 2.4 % of 179k CDR3s of other specificities are within
+    ``region_match`` (0.80) of one, 16 of them exactly; of 31,708 paired TCRs, 41 have
+    both CDR3s within 0.80 of *some* reference, but only 3 of the *same* receptor - one of
+    them TCR1 itself, listed again under an off-target peptide.
+
+    So when the best region match is a TCR CDR3:
+
+    * a paired query decides only if its two CDR3s are both within ``region_match`` of
+      one reference receptor (:meth:`CdrReference.match_pair`, chains swapped allowed),
+      or its exact match is a confirmed or named binder's;
+    * a lone CDR3 - a single TCR domain, or a TCR CDR3 carried by an antibody - decides
+      only against a confirmed or named binder (0.25 % of unrelated CDR3s), never against
+      an anonymous patent claim alone.
+
+    A lone domain whose CDR3 matches the same receptor as its whole-sequence hit is not a
+    lone CDR3, though: a V domain 98 % identical to a patent V domain, carrying that V
+    domain's CDR3, is a copy of it - provided the whole-sequence hit clears the
+    known-binder cuts itself. Without this, 49 of 101 lightly mutated references in the
+    calibration fell through to ``known_sequence``; without the cuts, 35 %-mutated V
+    domains whose CDR3 happened to survive were still flagged. A paired query does not get this
+    shortcut - one chain sharing a V gene and a near CDR3 with a reference chain is the
+    half-receptor case the pair rule exists for.
+
+    Anything else is still reported, as ``target_region_match_not_decisive``.
+    """
+    if reference.cdrs is None:
+        return
+    entry = reference.cdrs.by_id.get(best.get("region_reference") or "")
+    if entry is None or entry.chain not in TCR_PARTNER:
+        return
+    attributed = entry.status == "confirmed_binder" or bool(entry.agents)
+    regions = ann.get("regions") or {}
+    chain = best.get("region_chain") or ""
+    partner = TCR_PARTNER.get(chain)
+    q_partner = (regions.get(partner) or {}).get(FOCUS) if partner else None
+    if q_partner:
+        pair = reference.cdrs.match_pair(
+            {chain: best.get("region_query_seq") or "", partner: q_partner}
+        )
+        if pair:
+            best["pair_identity"] = pair["identity"]
+            best["pair_receptor"] = pair["receptor"]
+            best["pair_references"] = pair["references"]
+        if (pair and pair["identity"] >= cfg.region_match) or (
+            best.get("region_exact") and attributed
+        ):
+            return
+        reason = "tcr_pair_unmatched"
+    else:
+        if attributed:
+            return
+        matches = bool(best.get("region_exact")) or (
+            float(best.get("region_identity") or 0.0) >= cfg.region_match
+        )
+        if (
+            matches
+            and whole
+            and float(whole.get("fident") or 0.0) >= cfg.target_known_identity
+            and float(whole.get("qcov") or 0.0) >= cfg.target_known_coverage
+            and entry.receptors & reference.receptors_of(whole.get("target"))
+        ):
+            best["region_receptor_of_whole_hit"] = True
+            return
+        reason = "tcr_cdr3_claim_alone"
+    best["region_decisive"] = False
+    best["region_not_decisive_reason"] = reason
 
 
 def _carrier_prior_art(per_unit: dict, index) -> dict:
@@ -291,7 +373,7 @@ def screen(
 
     t = time.time()
     target_region = {
-        qid: _best_region(reference, ann, cfg)
+        qid: _best_region(reference, ann, cfg, target_whole.get(qid))
         for qid, ann in annotations.items()
     }
     timing["target_region"] = round(time.time() - t, 2)

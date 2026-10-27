@@ -9,6 +9,7 @@ for antibodies, alternative scaffolds and plain sequences alike. The ``cdr3`` sl
 region_kind         cdr1 / cdr2 / cdr3                         focus (``cdr3``)
 ==================  =========================================  ======================
 antibody_cdrs       CDR1 / CDR2 / CDR3 per chain (IMGT)        CDR3
+                    (a TCR keys its chains ``A``/``B``)
 scaffold_paratope   per-element paratope spans, cdr3 = all     whole paratope
 whole               cdr3 only                                  the entire sequence
 ==================  =========================================  ======================
@@ -22,14 +23,17 @@ number regardless of category.
 from __future__ import annotations
 
 from .compat import proteintyper
+from .tcr import tcr_cdrs
 
 FOCUS = "cdr3"
 
 #: Chains allowed to carry the focus region, in preference order: an antibody heavy chain
-#: (``H``), a scaffold's projected paratope (``S``) and a whole-sequence focus (``W``).
+#: (``H``), a TCR beta then alpha chain (``B``, ``A``), a scaffold's projected paratope
+#: (``S``) and a whole-sequence focus (``W``). Both TCR CDR3s sit over the peptide, so
+#: neither is demoted the way a light chain is.
 #: A light chain (``K``/``L``) is deliberately absent - it can still be compared, but it
 #: does not get to decide a match. See :func:`prescreen._best_region`.
-PARATOPE_CHAINS = ("H", "S", "W")
+PARATOPE_CHAINS = ("H", "B", "A", "S", "W")
 
 
 def extract(seq: str, category: str, region_kind: str) -> dict:
@@ -45,6 +49,8 @@ def extract(seq: str, category: str, region_kind: str) -> dict:
         caller must treat as "region arm not applicable" rather than as novelty.
     """
     seq = seq.strip().upper().replace("*", "")
+    if category in ("tcr", "tcr_domain"):
+        return tcr_cdrs(seq)
     if region_kind == "antibody_cdrs":
         cdr_novelty = proteintyper("cdr_novelty")
         try:

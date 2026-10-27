@@ -31,6 +31,8 @@ For each submission, in order (`prescreen.screen`):
    they clear `ANTIBODY_GERMLINE_FLOOR`, which drops constant domains numbered as variable
    ones. A chain with fewer than two surviving domains is left whole. Hits are aggregated
    back to one record per submission, each carrying the chain and domain that found it.
+   A TCR chain is split on TCR numbering instead (`tcr.tcr_domains`), never on antibody
+   numbering, which would cut an alpha chain into "two domains" at its C-alpha.
 
    A chain with no variable domains but an IgG hinge-CH2-CH3 inside it, and at least
    `FC_CARRIER_MIN_REMAINDER` (20) residues outside it, is split into the fused binder(s)
@@ -42,14 +44,23 @@ For each submission, in order (`prescreen.screen`):
    heavy chains, 19 dual-variable light chains and 24 multivalent VHHs, ozoralizumab among
    them.
 
-1. **Classify** (`classify.py`) — molecule category from sequence: antibody formats
+1. **Classify** (`classify.py`) — molecule category from sequence: T-cell receptors
+   first (`tcr` for a paired alpha/beta, `tcr_domain` for one V domain; `tcr.py`), when a
+   V domain numbers against antpack's TCR germlines at ≥ 0.60 *and* better than against
+   antibody ones — checked first because a TCR chain otherwise force-fits an antibody
+   germline at 0.55-0.66 and types as an Fv; antibody formats
    (Fv / scFv / Fab / IgG / nanobody / VH-domain) via antpack IMGT numbering; alternative
    scaffolds (affibody / monobody / DARPin / Centyrin-type FN3 / engineered Fc,
    `fc_tfr`) via framework identity to the canonical reference, gated at 0.85 — `fc_tfr`
    only for a query no longer than 1.15× an Fc, so a whole IgG heavy chain stays an
    antibody; otherwise a length regime (peptide / miniprotein / small_protein). The category sets the `region_kind` that chooses the binding region.
 2. **Extract the binding region** (`regions.py`, `cdrref.py`) — antibody CDRs (IMGT),
-   projected scaffold paratope, or the whole sequence for a plain peptide/miniprotein.
+   TCR CDRs (IMGT, keyed `A`/`B` rather than `H`/`L`; CDR1/CDR2 are compared against the
+   same TCR chain only), projected scaffold paratope, or the whole sequence for a plain
+   peptide/miniprotein. Every CDR3 - antibody or TCR, either chain - is compared against
+   every TCR CDR3: a TCR CDR3 lifted into an antibody, or onto the other TCR chain, is
+   still the known paratope. On VDJdb 8 of 179k CDR3s of other specificities come within
+   0.80 of a `kras-pmhc` reference on the opposite chain, against 4,348 on their own.
    An engineered Fc's paratope is the residues that *differ* from wild-type IgG1 at the
    TfR-binding CH3 patch positions, so a wild-type Fc projects to the empty paratope `-`.
 3. **Prior-art arm** (`priorart.py`, `refdb.py`) — batched MMseqs2 against the public
@@ -115,6 +126,26 @@ that is how the arm matches; the TfR1 index is annotated this way. One exception
 resubmitted reference flagged: a whole-sequence hit at ≥ 0.99 identity and coverage whose
 region matches *exactly* is `known_target_binder` with `verbatim_copy: true`. A
 framework-reuse chimera cannot reach it, because a swapped CDR3 is never an exact match.
+
+A TCR is judged on its *pair*. One TCR CDR3 carries a lot of germline - JDI's
+`ALSGPSGAGSYQLT` is TRAV19 joined to the TRAJ28 segment `GAGSYQLT` - and patent listings
+hold public CDR3s: US11458191 pair 16's beta `ASSLALSYEQY` is also an EBV EBNA4 TCR's.
+Measured on VDJdb (2026-06-03) against the `kras-pmhc` set's 83 CDR3s: 2.4 % of 179k
+CDR3s of other specificities are within 0.80 of one (16 exactly), and of 31,708 paired
+TCRs 41 have both CDR3s within 0.80 of *some* reference but only 3 of the *same*
+receptor - one of them TCR1 itself, listed again under an off-target peptide. So when the
+best region match is a TCR CDR3 (`prescreen._tcr_pairing`):
+
+- a paired query decides only if its two CDR3s are both within `region_match` of one
+  reference receptor (`CdrReference.match_pair`, chains swapped allowed; the index's
+  `receptor_ids` say which CDR3s belong together), or its exact match is a confirmed or
+  named binder's;
+- a lone CDR3 - a single TCR domain, or a TCR CDR3 carried by an antibody - decides only
+  against a confirmed or named binder, or when it is the CDR3 of the very receptor its
+  whole-sequence hit is (a lightly mutated patent V domain is a copy, not a lone CDR3).
+
+Anything else is `target_region_match_not_decisive` context, with `pair_identity` and
+`pair_receptor` where a pair was compared.
 
 ### The governing rule: antibody formats are judged on the paratope
 
@@ -196,6 +227,18 @@ chains, `target_known` mid-plateau from 0.86 to 0.94 and `region_match` flat fro
 mutation is 78/77/51/0/0 % against TNF's 96/95/54/0/0: the set carries ~500
 light-chain-only patent claims, and a lightly mutated one whose CDR-L3 is germline-common
 cannot be told from a germline light chain.
+
+`kras-pmhc` (2026-10-27, 144 references, all eight arms) is TCR-only. The standard run (909
+fixtures) catches 101/101 knowns and 100/99/84/51/1 % at 2/5/10/20/35 % mutation, with no
+target-arm flag on 80 unrelated designs, 101 shuffled controls or 61 framework-reuse
+chimeras; 11 of its 61 grafts are flagged, the other 50 moving a patent claim's CDR3 into
+a different single V domain, which the lone-CDR3 rule (§2) reports as context. 532 TCR
+fixtures all behave as specified: CDR3 pairs grafted onto unrelated TCR frameworks, with
+1-2 edits, swapped between chains, a confirmed binder's CDR3 as an antibody CDR-H3 and bare
+CDR3 peptides are flagged; unrelated PDB TCRs, JDI's framework with foreign CDR3s, grafts
+near on one chain, a patent CDR3 alone, and VDJdb TCRs of other specificities are not. The
+inherited cut points are kept rather than re-measured; the TCR-specific evidence is the
+VDJdb measurement behind the pair rule.
 
 
 4,964 unique known/claimed TNF-α binders with per-entry provenance: 28 confirmed binders,
@@ -307,5 +350,10 @@ age per arm (from the manifest) belongs next to any "no prior art found" verdict
 6. **Humanised VHHs** that read a human VH hallmark tetrad may classify as `vh_domain`
    rather than `nanobody`; both are searched against the same references, so the verdict is
    unaffected, but the reported category can differ.
+7. **TCR references are mostly CDR3s, and a lone CDR3 is weak evidence.** Receptors known
+   only by their CDR3s (IEDB, VDJdb, a few patents) are found through them, not on whole V
+   domain. A single TCR domain, or an antibody carrying a TCR CDR3, is flagged only
+   against a confirmed or named binder's CDR3: a patent-claimed CDR3 alone is context,
+   because patents hold public CDR3s shared with TCRs of other specificities.
 
 

@@ -32,7 +32,7 @@ from pathlib import Path
 
 from . import mmseqs
 from .cdrref import CdrReference, _wildcard_equal
-from .classify import ANTIBODY_CATEGORIES, classify
+from .classify import ANTIBODY_CATEGORIES, TCR_CATEGORIES, classify
 from .compat import proteintyper
 from .regions import FOCUS, extract, focus_region, identity_fn_for
 
@@ -87,7 +87,7 @@ def _annotator_fingerprint() -> str:
     by the old one.
     """
     h = hashlib.sha256()
-    for mod in ("classify.py", "regions.py"):
+    for mod in ("classify.py", "regions.py", "tcr.py"):
         h.update((Path(__file__).parent / mod).read_bytes())
     return h.hexdigest()[:8]
 
@@ -156,6 +156,9 @@ class TargetReference:
             "vhh_putative",
             "vnar",
             "peptide_or_cdr",
+            "tcr_chain_alpha",
+            "tcr_chain_beta",
+            "tcr_cdr3",
         }
     )
 
@@ -260,7 +263,9 @@ class TargetReference:
         """Reference ids whose regions are comparable with a query of this category."""
         self.ensure_annotations()
         if region_kind == "antibody_cdrs":
-            keep = set(ANTIBODY_CATEGORIES)
+            keep = set(
+                TCR_CATEGORIES if category in TCR_CATEGORIES else ANTIBODY_CATEGORIES
+            )
         elif region_kind == "scaffold_paratope":
             keep = {category}
         else:
@@ -376,6 +381,11 @@ class TargetReference:
             "carrier_patch_identity": round(identity, 4),
             "carrier_explained": identity < 0.8,
         }
+
+    def receptors_of(self, ref_id: str | None) -> frozenset:
+        """The source receptors a reference comes from (``receptor_ids``; TCR sets only)."""
+        meta = self.metadata.get(self.parse_header(ref_id or "").get("id") or "") or {}
+        return frozenset(r for r in (meta.get("receptor_ids") or "").split(";") if r)
 
     def _corpus_occurrences(self, ref_id: str) -> int | None:
         """How common this reference is in a general antibody corpus, if annotated.

@@ -123,7 +123,14 @@ def variable_domains(seq: str, floor: float | None = None) -> list:
     Genuine dual-variable heavy chains and bivalent VHHs sit at 0.92-0.98 and survive.
     """
     from .classify import ANTIBODY_GERMLINE_FLOOR
+    from .tcr import tcr_domains
 
+    # A TCR is split on TCR numbering, never on antibody numbering: antpack fits a TCR
+    # chain to antibody germlines above the floor, constant domain included, so the
+    # antibody path would cut an alpha chain into "two domains" at its C-alpha.
+    tcr = tcr_domains(seq)
+    if tcr:
+        return [seq[d["start"]:d["end"]] for d in tcr] if len(tcr) >= 2 else []
     floor = ANTIBODY_GERMLINE_FLOOR if floor is None else floor
     found: list = []
     _spans_in(seq, 0, len(seq), found)

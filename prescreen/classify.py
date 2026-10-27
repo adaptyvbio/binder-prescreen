@@ -8,6 +8,12 @@ no model has been folded yet.
 
 Decision order (first match wins):
 
+0. **T-cell receptors** — a sequence whose V domains number better against TCR germlines
+   than antibody ones (:mod:`prescreen.tcr`). Checked first because antpack force-fits a
+   TCR chain to antibody germlines at 0.55-0.66, above the antibody floor below, and would
+   otherwise type it as an Fv. ``tcr`` for a paired alpha/beta (or gamma/delta) receptor,
+   ``tcr_domain`` for one V domain; both carry ``region_kind="antibody_cdrs"``, because
+   the region is the same IMGT CDR set, keyed by TCR chain (``A``/``B``) instead.
 1. **Antibody formats** — antpack numbering via ``cdr_novelty.extract_cdrs``. That call
    already enforces the library's numbering-validity test (IMGT anchors, CDR length
    bands, germline percent identity), so a successful extraction *is* the evidence that
@@ -29,6 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 
 from .compat import antpack_annotators, proteintyper
+from .tcr import tcr_domains
 
 # Human constant-domain probes (germline reference segments) used only as presence/absence
 # landmarks to separate Fv / scFv / Fab / IgG. Truncated to the first 24 residues: enough
@@ -75,6 +82,9 @@ ANTIBODY_CATEGORIES = (
     "vh_domain",
     "single_domain_antibody",
 )
+#: IMGT-numbered like the antibody formats and compared through the same CDR index, keyed
+#: by TCR chain rather than H/L: see :data:`prescreen.cdrref.CANONICAL_CHAIN`.
+TCR_CATEGORIES = ("tcr", "tcr_domain")
 SCAFFOLD_CATEGORIES = ("affibody", "monobody", "darpin", "centyrin", "fc_tfr")
 #: An Fc-family call only when the Fc is most of the sequence: a binder fused to an Fc must
 #: keep its own category, or its paratope would be replaced by the Fc patch.
@@ -112,6 +122,11 @@ DECLARED_CLASS_MAP = {
     "heavy_chain": {"igg", "fab", "fv", "vh_domain", "nanobody"},
     "light_chain": {"igg", "fab", "fv", "single_domain_antibody"},
     "antibody": {"igg", "fab", "fv", "scfv", "nanobody", "vh_domain"},
+    "tcr": {"tcr", "tcr_domain"},
+    "sctcr": {"tcr", "tcr_domain"},
+    "sctv": {"tcr", "tcr_domain"},
+    "tcr_alpha": {"tcr_domain", "tcr"},
+    "tcr_beta": {"tcr_domain", "tcr"},
     "affibody": {"affibody"},
     "monobody": {"monobody", "centyrin"},
     "centyrin": {"centyrin", "monobody"},
@@ -315,6 +330,23 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
         if scaffold_gate is None
         else scaffold_gate
     )
+
+    # 0. T-cell receptor V domains.
+    domains = tcr_domains(seq)
+    if domains:
+        types = {d["chain"] for d in domains}
+        return Classification(
+            category="tcr" if len(types) > 1 else "tcr_domain",
+            region_kind="antibody_cdrs",
+            confidence=max(d["percent_identity"] for d in domains),
+            length=n,
+            evidence={
+                "chains": [d["chain"] for d in domains],
+                "germline_identity": [d["percent_identity"] for d in domains],
+                "antibody_germline_identity": [d["antibody_identity"] for d in domains],
+                "constant_domains": constant_domains(seq),
+            },
+        )
 
     # 1. Antibody variable domains.
     try:

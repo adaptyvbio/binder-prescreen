@@ -25,6 +25,7 @@ import random
 
 from .compat import proteintyper
 from .regions import FOCUS, extract, focus_region
+from .tcr import tcr_cdr_positions
 
 AA = "ACDEFGHIKLMNPQRSTVWY"
 
@@ -37,9 +38,12 @@ def focus_span(seq: str, category: str, region_kind: str) -> tuple[int, int] | N
     extractors slice the query itself.
     """
     if region_kind == "antibody_cdrs":
-        cdr_novelty = proteintyper("cdr_novelty")
-        positions = cdr_novelty.cdr_residue_positions(seq, molecule_type="auto")
-        for chain in ("H", "L"):
+        if category in ("tcr", "tcr_domain"):
+            positions = tcr_cdr_positions(seq)
+        else:
+            cdr_novelty = proteintyper("cdr_novelty")
+            positions = cdr_novelty.cdr_residue_positions(seq, molecule_type="auto")
+        for chain in ("H", "B", "A", "L"):
             pos = (positions.get(chain) or {}).get(FOCUS) or []
             if pos:
                 return min(pos), max(pos)

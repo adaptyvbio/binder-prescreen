@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.5.0 - 2026-10-27
+
+### Added
+- **A KRAS-G12D / HLA-A*11:01 pMHC known-binder set** (`--target kras-pmhc`): 51 TCRs
+  from IEDB, VDJdb, the PDB and patent sequence listings (US11458191/US11382954,
+  WO2016085904, WO2019112941, US12624084), as 61 V domains and 83 CDR3s. Binders shown
+  only for G12V, and patent TCRs claimed for G12V/G12D, are kept as claims. Calibrated
+  with all eight arms over 909 fixtures and 532 TCR-specific ones: every known, every
+  CDR3-pair graft and 1-2-edit variant flagged, and no target-arm flag on unrelated
+  designs, unrelated PDB TCRs, framework-reuse chimeras or VDJdb TCRs of other
+  specificities.
+- **T-cell receptors are a category** (`tcr`, `tcr_domain`). A V domain that numbers
+  against antpack's TCR germlines at >= 0.60 and better than against antibody ones is a
+  TCR; its CDRs are keyed `A`/`B` and compared against TCR CDRs. A single-chain
+  Valpha-linker-Vbeta is split into its two domains for the searches, as an scFv is.
+- **A TCR is judged on its pair.** A TCR CDR3 match decides only if both of the query's
+  CDR3s match one reference receptor (`receptor_ids` in the CDR index), or the exact
+  match is a confirmed or named binder's; a lone CDR3 decides only against a confirmed or
+  named binder, or as the CDR3 of the V domain the query copies. Otherwise it is
+  `target_region_match_not_decisive` context. On VDJdb, 2.4 % of unrelated CDR3s come
+  within 0.80 of a reference CDR3 - patents hold public ones - but only 3 of 31,708
+  paired TCRs match one receptor on both chains.
+- **TCR CDR3s are found wherever they are put.** Every CDR3 - an antibody's, or either TCR
+  chain's - is compared against the CDR3s of both TCR chains, so a TCR CDR3 used as a
+  CDR-H3 (a TCR-mimic) or moved to the other chain is still the known paratope. No other
+  target's CDR index holds TCR rows, so nothing changes for them.
+- `scripts/build/tcr_prior_art_to_target.py` builds a TCR target set from a merged
+  prior-art table; `examples/submissions_kras-pmhc.fasta` is a worked set.
+
+### Fixed
+- **A TCR was typed as an antibody.** antpack fits a TCR chain to antibody germlines at
+  0.55-0.66, above the antibody floor, so a beta chain with its constant domain was an
+  `fv` and an alpha chain a `single_domain_antibody`, with CDRs compared as H and L. No
+  reference in the TNF-alpha, GLP-1R or TfR1 sets changes category (11,885 checked), and
+  their region caches are regenerated with identical content.
+
 ## 0.4.1 - 2026-10-19
 
 ### Fixed

@@ -57,8 +57,9 @@ uv run prescreen examples/submissions.fasta --skip-prior-art  --target tnfa -o r
 
 Replace `--target <slug>` to pick a target other than the default. 
 
-`examples/` carries a worked set per target — `submissions.fasta` (TNF-α) and
-`submissions_glp1r.fasta` (GLP-1R); `tfr1` has none yet. Each record's description line
+`examples/` carries a worked set per target — `submissions.fasta` (TNF-α),
+`submissions_glp1r.fasta` (GLP-1R) and `submissions_kras-pmhc.fasta` (KRAS-G12D pMHC);
+`tfr1` has none yet. Each record's description line
 states the construct and the verdict it should produce, so they double as a smoke test.
 
 ```
@@ -117,6 +118,7 @@ uv run prescreen examples/submissions.csv  --target tnfa --no-patent -o report/
 | `tnfa` | TNF-α | [P01375](https://www.uniprot.org/uniprotkb/P01375) | 4,964 | antibody-dominated — ~3,100 Ig chains and Fvs, plus affibodies, monobodies, miniproteins, receptor-derived decoys |
 | `glp1r` | GLP-1 receptor | [P43220](https://www.uniprot.org/uniprotkb/P43220) | 225 | peptide-dominated — 215 GLP-1 analogue peptides, 7 antibody chains, 3 peptide-Fc fusions |
 | `tfr1` | Transferrin receptor 1 (TfR1/CD71) | [P02786](https://www.uniprot.org/uniprotkb/P02786) | 6,695 | mixed — ~3,000 claimed peptides/loops, ~1,600 Ig chains and Fvs, 150 VNARs, 39 VHHs, FN3 domains, engineered Fc/CH3 patches, miniproteins, natural ligands |
+| `kras-pmhc` | KRAS G12D / HLA-A*11:01 (pMHC) | [P01116](https://www.uniprot.org/uniprotkb/P01116) | 144 | TCRs — V domains and CDR3s of 51 TCRs from IEDB, VDJdb, the PDB and patent listings; G12V binders included as claims |
 
 `tnfa` is the default, so omitting `--target` screens against TNF-α. 
 
@@ -131,6 +133,12 @@ no target-arm flag on 80 unrelated designs or 358 germline light chains, and bot
 whole-sequence and the binding-region cut points sit mid-plateau, so the inherited values
 hold there too.
 
+**`kras-pmhc` was checked with TCR fixtures** (909 standard and 532 TCR-specific, all
+eight arms): every known and every CDR3 pair grafted onto an unrelated TCR, with 1-2 edits
+or with the chains swapped, is flagged; no unrelated design, unrelated PDB TCR,
+framework-reuse chimera or VDJdb TCR of another specificity is. The inherited cut points
+are kept.
+
 Two things to expect on `glp1r` specifically. Some of its peptides carry `X` from ChEMBL's
 non-standard residues and match only where the wildcard lands. And short submissions come
 back `no_reference_signal` rather than `pass` — below 25 aa the filter refuses to call
@@ -144,6 +152,16 @@ engineered TfR-binding Fc is compared on its CH3 patch. And a lightly mutated co
 of its ~500 light-chain-only patent claims is caught less often than on `tnfa` (77-78 % at
 2-5 % mutation, against 95-96 %), because a germline-common CDR-L3 cannot decide a call;
 a verbatim copy still can (`verbatim_copy`).
+
+Three things to expect on `kras-pmhc`. A T-cell receptor is its own category (`tcr` for a
+pair, `tcr_domain` for one V domain), and its CDRs are compared against TCR CDRs; submit a
+pair as `alpha:beta` or as one single-chain Vα-linker-Vβ. A TCR is judged on its *pair*:
+a CDR3 match counts only if both CDR3s match the same known receptor, or the match is an
+exact copy of a confirmed or named binder's CDR3 - one near CDR3 is common between
+unrelated TCRs, and patent listings hold public CDR3s that TCRs of other specificities
+share. And a lone CDR3 - a single TCR domain, or a TCR CDR3 inside an antibody - is flagged
+only against a confirmed or named binder; against a patent claim alone it is
+`target_region_match_not_decisive` context.
 
 From Python, the slug goes on the config:
 
@@ -259,6 +277,16 @@ there are no tested non-binders. By primary source: JPO (3,705), USPTO (2,483), 
 KIPO (157), PLAbDab (146), PDB (17), literature (8), NCBI patents (1). Named agents include
 trontinemab, pabinafusp, lepunafusp, posnafusp, delpacibart and zeleciment.
 
+**`kras-pmhc`** — **144** references for KRAS G12D presented by HLA-A*11:01, all TCRs:
+61 V domains and 83 CDR3s from 51 receptors, with **154** CDR-index rows typed by TCR
+chain. Sources: 14 G12D TCRs from IEDB and VDJdb (the KT5, TCR1 and JDI lineages, the
+murine TK412); PDB 7PB2 and 7OW6 (JDI, JDIa41b1) and the G12V complexes 8WTE, 8WUL, 9IKY
+and 9WFT; and the patent sequence listings of US11458191/US11382954 (24 TCRs),
+WO2016085904, WO2019112941 and US12624084. 22 are confirmed binders (G12D, with a structure
+or an IEDB assay record); patents, VDJdb-only receptors and binders shown only for G12V are
+disclosed claims. No TCR-mimic antibody or designed-binder sequences were available for
+this pMHC. The source table is `kras-pmhc_source_prior_art.csv`.
+
 
 ### Adding a target
 
@@ -273,9 +301,31 @@ header, pipe-separated and positional:
 
 `class` must come from:
 `fv_domain_vh`, `fv_domain_vl`, `igg_chain_heavy`, `igg_chain_light`, `igg_fv`, `fab`,
-`vhh`, `vhh_putative`, `vnar`, `peptide_or_cdr` (the CDR-indexed ones), and `affibody`,
-`monobody`, `miniprotein`, `receptor_derived`, `viral_decoy`, `designed_other`,
-`scaffold_other`, `other`.
+`vhh`, `vhh_putative`, `vnar`, `peptide_or_cdr`, `tcr_chain_alpha`, `tcr_chain_beta`,
+`tcr_cdr3` (the CDR-indexed ones), and `affibody`, `monobody`, `miniprotein`,
+`receptor_derived`, `viral_decoy`, `designed_other`, `scaffold_other`, `other`.
+
+**A pMHC target whose prior art is TCRs** skips steps 1-3. Its prior art comes from places
+that describe a receptor differently - IEDB and VDJdb by CDR3 pair, the PDB and patent
+listings by chains with signal peptide and constant domain - so one script reads a merged
+table (`set,tier,modality,target_peptide,allele,binder_id,seq_type,sequence,cdr3a,cdr3b,
+...`, chains joined by `|` in `sequence`) and writes all three files. It keeps the rows on
+the target allele and mutations that carry a sequence or a CDR3, cuts each V domain out
+by TCR numbering, and writes each unique V domain as `tcr_chain_alpha`/`_beta`, each
+unique CDR3 as `tcr_cdr3`, and a CDR index chain-typed `A`/`B` with the receptors each
+CDR3 comes from (`receptor_ids`), which the pair rule needs:
+
+```bash
+uv run python scripts/build/tcr_prior_art_to_target.py \
+    --table prescreen/data/targets/kras-pmhc/kras-pmhc_source_prior_art.csv \
+    --slug kras-pmhc --prefix KRP --out-dir prescreen/data/targets/kras-pmhc \
+    --allele 11:01 --mutation G12D G12V --confirmed-mutation G12D
+```
+
+Binders shown only for another mutation are kept as claims. Skip the PLAbDab annotation
+(3b) for such a set: an antibody corpus says nothing about which TCR CDR3s are
+germline-common. The pair rule (`PRESCREEN_SPEC.md` §2) is what keeps a TCR sharing V and
+J genes, or a public CDR3, with a reference from being called a known binder.
 
 **2. Normalise it** — a curation track's own vocabulary rarely matches:
 

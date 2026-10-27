@@ -157,6 +157,22 @@ def evaluate(record: dict, cfg: Config) -> dict:
             "it indicates a shared framework rather than a known paratope; reported as "
             "context only",
         }
+        # See :func:`prescreen._tcr_pairing`.
+        reason = region.get("region_not_decisive_reason")
+        if reason == "tcr_pair_unmatched":
+            context["target_region_match_not_decisive"].update({
+                "pair_identity": region.get("pair_identity"),
+                "pair_receptor": region.get("pair_receptor"),
+                "note": "one TCR CDR3 is near a known binder's, but the two CDR3s do not "
+                "both match one known receptor; a single near CDR3 is common between "
+                "unrelated TCRs sharing V and J genes, so it is reported as context only",
+            })
+        elif reason == "tcr_cdr3_claim_alone":
+            context["target_region_match_not_decisive"].update({
+                "note": "a lone TCR CDR3 matches a patent-claimed or otherwise anonymous "
+                "receptor's; such CDR3s include public ones carried by TCRs of other "
+                "specificities, so without a partner chain it is context only",
+            })
     # An antibody-shaped sequence the numbering refused. The paratope arm did not run,
     # so "no region match" here means "not looked at", and a reviewer who reads this row
     # as a clean paratope is reading a check that never happened. Context, not a flag: it
