@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.1 - 2026-11-09
+
+### Fixed
+- **A lightly edited known binder passed when its edits were spread thin.** The
+  known-binder call for antibody and TCR formats required the focus CDR3 to match at
+  `region_match` (0.80), so a few edits spread across the CDRs slipped under it while the
+  molecule stayed near-identical: a single-chain JDI TCR with three edits in CDR3-alpha
+  (0.79), an adalimumab Fab with three in CDR-H3 (0.79) and an ozoralizumab VHH with two in
+  CDR3 (0.75) all passed at 93-94 % whole-sequence identity. A new molecule-level rule,
+  `_lightly_edited_copy`, calls `known_target_binder` when every searched unit hits a
+  reference above the known-binder cuts, carries CDRs within `region_match` of that
+  reference's own CDRs (re-read from its sequence), and keeps every CDR3 at or above the
+  new `copy_cdr3_floor` (0.70). Framework reuse with a new CDR3 still passes. Measured on
+  1,756 locally built graft, framework-reuse and mutant fixtures for `tnfa` and
+  `kras-pmhc`, one verdict changed - a framework-reuse fixture that was in fact a two-edit
+  variant. The example sets for `tnfa`, `glp1r` and `kras-pmhc` are otherwise unchanged,
+  and each gains worked cases. The evidence records `lightly_edited_copy`; the merged
+  whole-sequence hit now carries every unit's own hit as `unit_hits`.
+
 ## 0.5.0 - 2026-10-27
 
 ### Added

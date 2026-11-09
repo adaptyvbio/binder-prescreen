@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import mmseqs
-from .cdrref import CdrReference, _wildcard_equal
+from .cdrref import CANONICAL_CHAIN, CdrReference, _wildcard_equal
 from .classify import ANTIBODY_CATEGORIES, TCR_CATEGORIES, classify
 from .compat import proteintyper
 from .regions import FOCUS, extract, focus_region, identity_fn_for
@@ -186,6 +186,8 @@ class TargetReference:
             )
         )
         self.annotations: dict = {}
+        #: ref_id -> its CDRs, filled on demand by :meth:`reference_regions`.
+        self._region_cache: dict = {}
 
     @staticmethod
     def _load_metadata(metadata: str | Path | None) -> dict:
@@ -381,6 +383,39 @@ class TargetReference:
             "carrier_patch_identity": round(identity, 4),
             "carrier_explained": identity < 0.8,
         }
+
+    def reference_regions(self, ref_id: str | None) -> dict:
+        """The CDRs of one reference sequence, re-extracted from the sequence itself.
+
+        The packaged CDR table is deduplicated and its ``parent_ids`` column is capped, so
+        only 764 of the TNF-alpha set's 4,415 parents list all three heavy CDRs there -
+        grouping an index entry back to the molecule it came from is not reliable. Reading
+        the regions off the reference sequence is exact and costs ~18 ms, which is
+        affordable because it is only ever asked for a reference the whole-sequence arm
+        has already matched above the known-binder cuts.
+
+        Returns ``{canonical chain: {"cdr1", "cdr2", "cdr3"}}``, or ``{}`` when the
+        reference does not number.
+        """
+        if not ref_id:
+            return {}
+        cached = self._region_cache.get(ref_id)
+        if cached is not None:
+            return cached
+        seq = self.sequences.get(ref_id)
+        if seq is None:
+            seq = self.sequences.get(self.parse_header(ref_id).get("id") or "")
+        out: dict = {}
+        if seq:
+            try:
+                cl = classify(seq)
+                if cl.region_kind == "antibody_cdrs":
+                    for chain, regions in (extract(seq, cl.category, cl.region_kind) or {}).items():
+                        out.setdefault(CANONICAL_CHAIN.get(chain, chain), {}).update(regions)
+            except Exception:
+                out = {}
+        self._region_cache[ref_id] = out
+        return out
 
     def receptors_of(self, ref_id: str | None) -> frozenset:
         """The source receptors a reference comes from (``receptor_ids``; TCR sets only)."""

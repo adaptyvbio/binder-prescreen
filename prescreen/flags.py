@@ -202,6 +202,10 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # pass — reusing a published scaffold is allowed. For non-antibody formats
     # (miniprotein, peptide) the whole sequence IS the binder, so the composite suffices.
     verbatim = False
+    # A known molecule whose edits are spread across its CDRs rather than concentrated in
+    # the focus region. See :func:`prescreen._lightly_edited_copy`; it is only ever set
+    # for a region-bearing category, and has already checked the whole-sequence cuts.
+    copy = region.get("lightly_edited_copy") or {}
     if region_aware:
         # Requiring the region to corroborate is right when the region arm had a fair
         # chance to. It did not when the matched reference's class contributes no CDRs to
@@ -236,7 +240,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
             and whole_fident >= VERBATIM_IDENTITY
             and whole_qcov >= VERBATIM_IDENTITY
         )
-        known_binder = (
+        known_binder = bool(copy) or (
             whole_fident >= cfg.target_known_identity
             and whole_qcov >= cfg.target_known_coverage
             and (region_matches or uncorroborable or verbatim)
@@ -275,6 +279,10 @@ def evaluate(record: dict, cfg: Config) -> dict:
             # True when the call rests on the submission being the reference verbatim,
             # its exact region match being germline-common and so not decisive alone.
             "verbatim_copy": bool(verbatim and not region_matches),
+            # Set when the call rests on the molecule being a lightly edited copy -
+            # every unit a near-copy of its own reference across all CDRs - rather than
+            # on the focus region matching. See :func:`prescreen._lightly_edited_copy`.
+            "lightly_edited_copy": copy or None,
             "reference_class": whole.get("reference_class"),
         }
     # Known anti-target paratope on any framework: exact CDR3 match, or CDR3 identity at

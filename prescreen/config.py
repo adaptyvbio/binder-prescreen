@@ -83,6 +83,13 @@ class Config:
     # only corroborate.
     region_match: float = 0.80
     region_min_length: int = 5
+    # A lightly edited copy of a known binder (see prescreen._lightly_edited_copy) is
+    # judged over all its CDRs at ``region_match``, but each CDR3 must also stay at or
+    # above this floor on its own, or an intact partner chain outvotes a replaced one: an
+    # IgG on a known framework with a new CDR-H3 (0.15-0.36) and its light chain intact
+    # pools to >= 0.80. Measured: lightly edited copies sit at 0.75-0.79 (2 edits in an
+    # 8-residue CDR3, 3 in a 14), framework-reuse fixtures at <= 0.67.
+    copy_cdr3_floor: float = 0.70
     # A CDR carried by this many sequences in a general antibody corpus is germline, not a
     # paratope: matching it says the query uses a common framework. Measured: the kappa
     # CDR-L3 QQRSNWPLT appears in 358 of 350k PLAbDab antibodies, and before this cut

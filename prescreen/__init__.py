@@ -32,6 +32,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from . import cdrref
 from . import cluster as _cluster
 from . import flags as _flags
 from . import mmseqs, priorart, refdb, targets
@@ -53,7 +54,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 
 def _best_region(reference, ann: dict, cfg: Config, whole: dict | None = None) -> dict:
@@ -113,6 +114,10 @@ def _best_region(reference, ann: dict, cfg: Config, whole: dict | None = None) -
     best["supporting_exact_regions"] = support
     best["region_decisive"] = rank(best)[0]
     _tcr_pairing(reference, ann, best, cfg, whole)
+    # Molecule-level, independent of the region arm's verdict: see _lightly_edited_copy.
+    copy = _lightly_edited_copy(reference, ann, cfg, whole)
+    if copy:
+        best["lightly_edited_copy"] = copy
     return best
 
 
@@ -151,6 +156,11 @@ def _tcr_pairing(
     domains whose CDR3 happened to survive were still flagged. A paired query does not get this
     shortcut - one chain sharing a V gene and a near CDR3 with a reference chain is the
     half-receptor case the pair rule exists for.
+
+    A paired query does not get a shortcut here. The case it would be needed for - a
+    lightly edited copy of a known receptor whose weaker CDR3 falls just under the cut -
+    is caught by :func:`_lightly_edited_copy`, which judges the molecule rather than the
+    paratope and so reports ``known_target_binder`` without ``target_region_match``.
 
     Anything else is still reported, as ``target_region_match_not_decisive``.
     """
@@ -195,6 +205,103 @@ def _tcr_pairing(
         reason = "tcr_cdr3_claim_alone"
     best["region_decisive"] = False
     best["region_not_decisive_reason"] = reason
+
+
+def _lightly_edited_copy(reference, ann: dict, cfg: Config, whole: dict | None) -> dict:
+    """Is the submission a known binder with a handful of residues changed?
+
+    The paratope arm asks whether the *binding region* is known, and judges it on one
+    region: the focus CDR3. That is the right question for a grafted paratope, and the
+    wrong one for a copy that has been edited all over. Three edits in adalimumab's
+    14-residue CDR-H3 put it at 0.79 - under ``region_match`` - while the other five CDRs
+    stay near-intact and the whole molecule is 93 % identical to adalimumab. The same
+    arithmetic passed a single-chain JDI TCR, two edits in ozoralizumab's 8-residue CDR3,
+    and anything else whose edits are spread thin.
+
+    So this asks the other question: *is this molecule a known one, lightly edited?* Every
+    unit the search arm looked at (a chain, or one V domain of a multi-domain chain) must
+
+    * have a whole-sequence hit clearing the known-binder cuts, and
+    * carry CDRs within ``region_match`` of **that hit's own reference sequence**, read off
+      the reference with :meth:`TargetReference.reference_regions` rather than looked up
+      in the deduplicated CDR index.
+
+    * keep every CDR3 at or above ``copy_cdr3_floor`` (0.70) and at least
+      ``region_min_length`` long.
+
+    Requiring *every* unit is what keeps framework reuse passing. A Fab on adalimumab's
+    frameworks carrying a genuinely new CDR-H3 has a light chain that is still a near-copy
+    of adalimumab's, and scores 0.98 on its own; its heavy chain falls to 0.87 identity,
+    under the cut, so the submission is not a copy and nothing is flagged. The same holds
+    for a TCR given a new CDR3 on either chain. The CDR3 floor covers the case where the
+    reference itself carries both chains (an scFv or IgG): pooled over it, an intact light
+    chain would outvote a replaced CDR-H3.
+
+    Scoring is summed edit distance over summed length across all of a unit's CDRs, so
+    three changed residues count as three out of ~54 rather than as that one CDR3's 0.79.
+    Reading each unit against its own reference needs no notion of which references belong
+    to one molecule - a grouping the packaged tables cannot support, since the CDR index is
+    deduplicated and its ``parent_ids`` column is capped.
+
+    Returns the evidence dict, empty when the rule does not apply or does not hold.
+    """
+    cdr_novelty = proteintyper("cdr_novelty")
+    units = (whole or {}).get("unit_hits") or []
+    if not units or ann.get("region_kind") != "antibody_cdrs":
+        return {}
+    query = {
+        cdrref.CANONICAL_CHAIN.get(c, c): r for c, r in (ann.get("regions") or {}).items()
+    }
+    if not query:
+        return {}
+    per_unit, covered = [], set()
+    for unit in units:
+        if float(unit.get("fident") or 0.0) < cfg.target_known_identity:
+            return {}
+        if float(unit.get("qcov") or 0.0) < cfg.target_known_coverage:
+            return {}
+        ref_regions = reference.reference_regions(unit.get("target"))
+        dist = total = 0
+        for chain, regions in ref_regions.items():
+            if chain not in query:
+                continue
+            q3, r3 = (query[chain] or {}).get(FOCUS), (regions or {}).get(FOCUS)
+            # The CDR3 has to be one the region arm would itself compare, and has to
+            # survive on its own: pooled over a reference that carries both chains, an
+            # intact light chain otherwise outvotes a heavy CDR3 that was replaced.
+            if not q3 or not r3 or min(len(q3), len(r3)) < cfg.region_min_length:
+                return {}
+            if float(cdr_novelty.cdr_identity(q3, r3)) < cfg.copy_cdr3_floor:
+                return {}
+            for label in cdrref.REGION_LABELS:
+                q, r = (query[chain] or {}).get(label), (regions or {}).get(label)
+                if not q or not r:
+                    continue
+                longest = max(len(q), len(r))
+                dist += round((1.0 - float(cdr_novelty.cdr_identity(q, r))) * longest)
+                total += longest
+            covered.add(chain)
+        if not total:
+            # The reference numbers, but shares no CDR with the query - a heavy-chain
+            # reference against a lone light chain. It cannot corroborate, and treating
+            # silence as agreement is the failure this whole module exists to avoid.
+            return {}
+        identity = round(1.0 - dist / total, 4)
+        if identity < cfg.region_match:
+            return {}
+        per_unit.append({
+            "reference": unit.get("target"),
+            "cdr_identity": identity,
+            "chain": unit.get("chain"),
+            "domain": unit.get("domain"),
+        })
+    # A query chain no reference spoke to is a chain that was never checked.
+    if covered != set(query):
+        return {}
+    return {
+        "units": per_unit,
+        "cdr_identity": min(u["cdr_identity"] for u in per_unit),
+    }
 
 
 def _carrier_prior_art(per_unit: dict, index) -> dict:

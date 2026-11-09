@@ -71,7 +71,7 @@ Ordered from most to least disqualifying (the verdict is the first that fires):
 
 | verdict | meaning |
 |---------|---------|
-| `known_target_binder` | matches a known anti-TNF binder (whole-sequence **and** paratope for antibody formats; whole-sequence for peptides/miniproteins) |
+| `known_target_binder` | matches a known anti-TNF binder (whole-sequence **and** paratope for antibody formats, or a lightly edited copy of one across all its CDRs; whole-sequence for peptides/miniproteins) |
 | `target_region_match` | carries a known anti-TNF paratope (CDR3 / projected paratope) on any framework |
 | `verbatim_target_fragment` | is an exact fragment of a known binder (short peptides) |
 | `existing_design` | matches an existing published design |
@@ -160,6 +160,7 @@ A hit here means "already tried, did not work"
 |-----------------|---------|-----|
 | exact adalimumab / known VHH / affibody | `known_target_binder` | whole-sequence + paratope both match |
 | known anti-TNF CDR3 on a foreign framework | `target_region_match` | paratope matches, whole-sequence does not |
+| adalimumab with a few edits spread over its CDRs | `known_target_binder` | every chain a near-copy of adalimumab's, CDRs within 0.80 overall |
 | known framework carrying a new CDR3 | `pass` | framework reuse is allowed; paratope is new |
 | unrelated design for another target | `existing_design` | already published on Proteinbase |
 

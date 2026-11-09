@@ -249,11 +249,13 @@ def merge_whole(
     best: dict = {}
     for sid, qids in index.by_submission.items():
         chosen = None
+        units = []
         for qid in qids:
             row = per_chain.get(qid)
             if row is None:
                 continue
             row = _relabel(dict(row), sid, index.chain_of(qid), index.domain_of(qid))
+            units.append({k: row.get(k) for k in ("target", "fident", "qcov", "chain", "domain")})
             # Strict ``>`` while walking chains in order, so a tie goes to the lowest
             # chain number — the heavy chain under the template's convention.
             if chosen is None or known_binder_rank(
@@ -261,5 +263,10 @@ def merge_whole(
             ) > known_binder_rank(chosen, identity_cut, coverage_cut):
                 chosen = row
         if chosen is not None:
+            # Every searched unit's own hit, kept beside the winner. Nothing here is
+            # recombined into the winner's numbers; a paired TCR needs to know whether
+            # its two V domains each hit a chain of the same receptor
+            # (:func:`prescreen._tcr_pairing`), which no single row can say.
+            chosen["unit_hits"] = units
             best[sid] = chosen
     return best

@@ -92,7 +92,7 @@ Rank order (most to least disqualifying):
 
 | # | flag | fires when | cut point |
 |---|------|-----------|-----------|
-| 1 | `known_target_binder` | **non-antibody:** whole-seq composite ≥ `target_known`. **antibody/scaffold:** whole-seq fident ≥ `target_known_identity` AND qcov ≥ `target_known_coverage` AND the binding region matches | 0.90 / (0.90 & 0.80) |
+| 1 | `known_target_binder` | **non-antibody:** whole-seq composite ≥ `target_known`. **antibody/scaffold:** whole-seq fident ≥ `target_known_identity` AND qcov ≥ `target_known_coverage` AND the binding region matches — **or** (antibody/TCR) the submission is a lightly edited copy: every unit clears those cuts, its CDRs are within `region_match` of its own matched reference's, and every CDR3 is ≥ `copy_cdr3_floor` | 0.90 / (0.90 & 0.80) / copy: 0.80 all-CDR, 0.70 CDR3 |
 | 2 | `target_region_match` | binding region (CDR3 / paratope) matches a known binder: exact, or Levenshtein ≥ `region_match` on a matching chain | exact, or 0.80 |
 | 3 | `verbatim_target_fragment` | sequence is an exact substring of a known binder (or contains one). Whole-sequence categories only | ≥ 8 aa |
 | 4 | `existing_design` | whole-seq ≥ `known_sequence` to the Proteinbase design corpus, with paratope also matching | 0.95 |
@@ -126,6 +126,26 @@ that is how the arm matches; the TfR1 index is annotated this way. One exception
 resubmitted reference flagged: a whole-sequence hit at ≥ 0.99 identity and coverage whose
 region matches *exactly* is `known_target_binder` with `verbatim_copy: true`. A
 framework-reuse chimera cannot reach it, because a swapped CDR3 is never an exact match.
+
+**A lightly edited copy is a known binder even when its CDR3 is not.** The region arm
+judges one region, so edits spread thin slip under it: three changes in adalimumab's
+14-residue CDR-H3 (0.79) or two in ozoralizumab's 8-residue CDR3 (0.75) leave the region
+under `region_match` while the molecule stays 93 % identical and its other CDRs near
+intact - and a single-chain JDI TCR with three edits in CDR3-alpha passed the same way.
+`_lightly_edited_copy` asks the molecule-level question instead. Every searched unit (a
+chain, or one V domain of a multi-domain chain) must hit a reference above the known-binder
+cuts and carry CDRs within `region_match` (summed edit distance over summed length) of
+**that reference's own CDRs**, re-read from the reference sequence rather than looked up
+in the deduplicated index, whose `parent_ids` column is capped and cannot group a
+molecule's CDRs back together. Each CDR3 must also clear `copy_cdr3_floor` (0.70) and
+`region_min_length` on its own, or an intact light chain pooled with a replaced CDR-H3
+over an scFv or IgG reference reaches 0.80. Requiring every unit is what keeps framework
+reuse passing: a new CDR3 drops that unit under the 0.90 whole-sequence cut. Measured on
+1,756 locally built graft, framework-reuse and mutant fixtures (`tnfa`, `kras-pmhc`), the
+rule changed one verdict - a framework-reuse fixture whose scrambled 8-residue CDR3 kept 6
+residues in place, i.e. a genuine two-edit variant. The call carries
+`lightly_edited_copy` evidence and raises no `target_region_match`, because the paratope
+itself did not match.
 
 A TCR is judged on its *pair*. One TCR CDR3 carries a lot of germline - JDI's
 `ALSGPSGAGSYQLT` is TRAV19 joined to the TRAJ28 segment `GAGSYQLT` - and patent listings
