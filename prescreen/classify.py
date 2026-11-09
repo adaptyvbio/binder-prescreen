@@ -22,7 +22,10 @@ Decision order (first match wins):
    presence of constant-domain segments.
 2. **Alternative scaffolds** — framework identity to the canonical affibody (protein A Z
    domain), monobody (FNfn10) and DARPin (NI3C consensus) references from
-   ``scaffold_cdr``, gated at the library's ``SCAFFOLD_FRAMEWORK_IDENTITY`` (0.85).
+   ``scaffold_cdr``, gated at the library's ``SCAFFOLD_FRAMEWORK_IDENTITY`` (0.85). A
+   DARPin that misses that gate is still one if its caps and repeats, scored segment by
+   segment (:mod:`prescreen.darpin`), say so: the single-reference gate penalises repeat
+   count, the Mii C-cap and framework redesign outside the randomised positions.
 3. **Length regime** — peptide, miniprotein, or small/large protein, with no claim about
    fold. These get a whole-sequence comparison only.
 
@@ -34,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
+from . import darpin
 from .compat import antpack_annotators, proteintyper
 from .tcr import tcr_domains
 
@@ -416,6 +420,23 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
             },
         )
 
+    # 2b. DARPins the single-reference gate missed. Only adds calls: everything the gate
+    # above accepts is decided there, so no existing classification changes.
+    darpin_ev = darpin.evidence(seq)
+    if darpin.is_darpin(darpin_ev):
+        return Classification(
+            category="darpin",
+            region_kind="scaffold_paratope",
+            confidence=darpin_ev["segment_score"],
+            length=n,
+            evidence={
+                "framework_identity": fw,
+                "gate": gate,
+                "min_length": min_lengths,
+                "darpin_segments": darpin_ev,
+            },
+        )
+
     # 3. Length regime.
     if n <= PEPTIDE_MAX:
         category = "peptide"
@@ -446,5 +467,6 @@ def classify(seq: str, scaffold_gate: float | None = None) -> Classification:
             ),
             "antibody_reject": antibody_reject,
             "antibody_numbering_reason": numbering_reason,
+            "darpin_segments": darpin_ev,
         },
     )

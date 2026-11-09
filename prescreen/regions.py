@@ -22,6 +22,7 @@ number regardless of category.
 
 from __future__ import annotations
 
+from . import darpin
 from .compat import proteintyper
 from .tcr import tcr_cdrs
 
@@ -61,6 +62,9 @@ def extract(seq: str, category: str, region_kind: str) -> dict:
             chain: {k: v for k, v in regions.items() if k.startswith("cdr") and v}
             for chain, regions in chains.items()
         }
+    if region_kind == "scaffold_paratope" and category == "darpin":
+        # Repeats framed by a scan, not the library's anchor regex: see darpin.repeat_offsets.
+        return darpin.project(seq)
     if region_kind == "scaffold_paratope":
         scaffold_cdr = proteintyper("scaffold_cdr")
         try:

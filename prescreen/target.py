@@ -87,7 +87,7 @@ def _annotator_fingerprint() -> str:
     by the old one.
     """
     h = hashlib.sha256()
-    for mod in ("classify.py", "regions.py", "tcr.py"):
+    for mod in ("classify.py", "darpin.py", "regions.py", "tcr.py"):
         h.update((Path(__file__).parent / mod).read_bytes())
     return h.hexdigest()[:8]
 

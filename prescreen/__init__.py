@@ -54,7 +54,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 
 def _best_region(reference, ann: dict, cfg: Config, whole: dict | None = None) -> dict:

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.2 - 2026-11-09
+
+### Fixed
+- **Redesigned DARPins were screened as plain miniproteins.** A DARPin was recognised
+  only by framework identity >= 0.85 to one reference, the three-repeat NI3C consensus with
+  the original C-cap, so a two-repeat design, the Mii C-cap and framework redesign
+  outside the randomised positions each pushed it out. Generative redesigns of H10-2-G3
+  (PDB 2JAB) scored 0.79-0.83. They were classed `miniprotein`, and their whole-sequence
+  match to 2JAB (0.88-0.90, in the PDB and in USPTO listings) became `near_known_sequence`
+  instead of shared framework. A new `prescreen/darpin.py` scores each segment on its own:
+  both caps against the known cap variants, and each internal repeat at its 26
+  non-randomised positions. It calls a DARPin at a length-weighted score >= 0.80 with the
+  second repeat >= 0.65. This only adds calls: anything the old gate accepted is still
+  decided there. Calibrated by `scripts/calibrate_darpin.py`: 158 PDB DARPins >= 0.827,
+  all accepted (old gate: 156); 1,376 natural ankyrin-repeat proteins <= 0.782 (GABP-beta1,
+  whose caps the DARPin consensus came from), none accepted; none of 9,950 affibodies or
+  4,115 monobodies accepted. NI3C now stays a DARPin under ~20 % random substitution
+  (old: ~10 %) and 2JAB under ~15 % (old: < 5 %). No classification changed across the
+  four target reference sets, the examples or 4,083 Proteinbase designs. The evidence
+  records the segment scores as `darpin_segments`.
+- **DARPin repeats were misframed.** The vendored `scaffold_cdr` framed a repeat after
+  every `G[AS]DVN[AV]` anchor. That dropped a repeat whose closing motif was redesigned
+  (`NGMDVNA`, `GADVDA`) and framed the C-cap as an extra repeat whenever a tag or linker
+  followed it. DARPin paratopes are now framed by a scan against the consensus repeat
+  (`darpin.project`). The vendored copy is unchanged, so DARPin paratopes deliberately
+  differ from upstream's.
+- `darpin.py` is part of the reference-annotation cache fingerprint.
+
+### Added
+- `examples/submissions_kras-pmhc.fasta` gains `darpin_g3_redesign`, a synthetic 2JAB
+  redesign that the old gate classed as a miniprotein.
+
 ## 0.5.1 - 2026-11-09
 
 ### Fixed

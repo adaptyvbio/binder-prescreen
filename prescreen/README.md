@@ -49,6 +49,9 @@ upstream library — `cdr_novelty` (antpack IMGT numbering, CDR identity), `scaf
 verbatim in `prescreen/_proteintyper/`, so the same sequence is numbered the same way either
 side without the prescreen needing that library on disk. Point `$PROTEINTYPER_SRC` at an
 upstream checkout's `src` directory to run against it instead and check for drift.
+One deliberate difference: DARPin recognition and repeat framing live in the
+prescreen-local `darpin.py`, not in the vendored `scaffold_cdr`, so DARPin paratopes are
+expected to differ from upstream's wherever upstream's anchor regex misframes a repeat.
 
 The curated known-binder sets ship one directory per target under
 `prescreen/data/targets/`, with `targets.json` as the roster; `prescreen --list-targets`

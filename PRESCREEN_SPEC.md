@@ -53,10 +53,19 @@ For each submission, in order (`prescreen.screen`):
    scaffolds (affibody / monobody / DARPin / Centyrin-type FN3 / engineered Fc,
    `fc_tfr`) via framework identity to the canonical reference, gated at 0.85 — `fc_tfr`
    only for a query no longer than 1.15× an Fc, so a whole IgG heavy chain stays an
-   antibody; otherwise a length regime (peptide / miniprotein / small_protein). The category sets the `region_kind` that chooses the binding region.
+   antibody. A DARPin that misses the 0.85 gate is still one if its segments say so
+   (`darpin.py`): N-cap and C-cap by local identity to the known cap variants (original
+   and Mii), each internal repeat by identity at its 26 non-randomised positions, combined
+   length-weighted to ≥ 0.80 with the second repeat ≥ 0.65 - repeat count, cap variant
+   and framework redesign no longer push a DARPin out. Calibrated on 167 PDB DARPins
+   (≥ 0.827) against 1,376 natural ankyrin-repeat proteins (≤ 0.782, GABP-β1). Otherwise
+   a length regime (peptide / miniprotein / small_protein). The category sets the `region_kind` that chooses the binding region.
 2. **Extract the binding region** (`regions.py`, `cdrref.py`) — antibody CDRs (IMGT),
    TCR CDRs (IMGT, keyed `A`/`B` rather than `H`/`L`; CDR1/CDR2 are compared against the
-   same TCR chain only), projected scaffold paratope, or the whole sequence for a plain
+   same TCR chain only), projected scaffold paratope (a DARPin's repeats are framed by a
+   scan against the consensus repeat, not the library's `G[AS]DVN[AV]` anchor, which drops
+   a repeat with a redesigned closing motif and frames a tagged C-cap as a repeat), or the
+   whole sequence for a plain
    peptide/miniprotein. Every CDR3 - antibody or TCR, either chain - is compared against
    every TCR CDR3: a TCR CDR3 lifted into an antibody, or onto the other TCR chain, is
    still the known paratope. On VDJdb 8 of 179k CDR3s of other specificities come within
