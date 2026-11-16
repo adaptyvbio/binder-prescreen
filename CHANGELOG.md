@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.3 - 2026-11-16
+
+### Fixed
+- **A design hit outside the top three raised `existing_design` with its paratope never
+  compared.** The prior-art arm re-numbered only the top `prior_art_top_hits` (3) hits
+  overall. A flag whose hit was not compared stands as unverified, and a design hit
+  usually ranks below patent, PDB and PLAbDab copies of the same framework. So
+  `existing_design` fired on framework reuse alone, for example a Fab whose near-germline
+  IGKV3-20 light chain matched a published scFv at 0.95 while its heavy chain was 0.54
+  identical. `best` and `best_design` are now always compared, whatever their rank.
+- **A shared light chain made a whole antibody known.** For a multi-chain submission,
+  every chain's paratope comparison could decide, so a Fab carrying a published light
+  chain was called that molecule whatever its heavy chain did. The same two domains
+  submitted as one scFv string were already judged on CDR-H3 alone. Now only a chain that
+  carries the binding site decides (antibody heavy chain, either TCR chain, scaffold
+  paratope), as in the target arm. The light-chain comparison is still recorded, as
+  `light_chain_region_identity` in the `existing_design` / `known_sequence` evidence and
+  `per_hit_supporting` in the region block. A lone light chain is judged on itself.
+  Measured on 60 Fab and scFv fixtures built from 15 published Proteinbase scFvs:
+  verbatim scFvs, the same domains as Fabs, and a design's VH with another design's VL all
+  stay `existing_design` (45/45). A design's VL verbatim with a new CDR-H3 goes from
+  `existing_design` (15/15) to no prior-art flag (0/15). Across the three example sets
+  one row changed: `tcr_mimic_h3`, whose `known_sequence` came from the verbatim
+  trastuzumab light chain alone, keeps `target_region_match` and records the light chain
+  as context.
+
+### Added
+- `examples/submissions_kras-pmhc.fasta` gains `light_chain_of_published_design`.
+
 ## 0.5.2 - 2026-11-09
 
 ### Fixed

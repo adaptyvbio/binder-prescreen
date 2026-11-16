@@ -54,7 +54,29 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
+
+
+def _region_hits(slot: dict) -> list:
+    """The prior-art hits whose paratopes are compared with the submission's.
+
+    The top ``prior_art_top_hits`` hits overall, plus ``best`` and ``best_design``
+    whatever their rank. Those two are the hits ``known_sequence`` and ``existing_design``
+    are judged on, and a flag whose hit was never compared stands as unverified. A design
+    hit outside the top three - common, since a shared framework puts patent, PDB and
+    PLAbDab copies of it ahead - therefore raised ``existing_design`` without its paratope
+    ever being looked at.
+    """
+    hits: list = []
+    seen: set = set()
+    for row in [*(slot.get("top") or []), slot.get("best"), slot.get("best_design")]:
+        if not row:
+            continue
+        key = (row.get("target"), row.get("db"), row.get("chain"), row.get("domain"))
+        if key not in seen:
+            seen.add(key)
+            hits.append(row)
+    return hits
 
 
 def _best_region(reference, ann: dict, cfg: Config, whole: dict | None = None) -> dict:
@@ -519,7 +541,7 @@ def screen(
                 ann["chain_regions"],
                 ann["category"],
                 ann["region_kind"],
-                slot.get("top") or [],
+                _region_hits(slot),
                 cache=hit_cache,
             )
         timing["prior_art_regions"] = round(time.time() - t, 2)

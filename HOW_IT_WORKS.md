@@ -49,7 +49,8 @@ That discrimination is the core of the filter.
    Proteinbase designs; USPTO patents). Short sequences get a second, sensitive
    pass so a 12-mer peptide copied from a paper is not silently missed. Each top hit's own
    sequence is re-numbered and its paratope compared with the submission's — so a shared
-   framework is reported as context, not as a known molecule.
+   framework is reported as context, not as a known molecule. For an antibody the heavy
+   chain's paratope decides: a reused light chain alone does not make a molecule known.
 4. **Known-binder search** — the submission against the curated TNF-α binder set, both
    whole-sequence and region-level, plus an exact-substring check for verbatim copies.
 5. **Within-batch duplicates** — clusters repeated submissions in the same batch.

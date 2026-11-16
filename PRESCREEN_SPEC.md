@@ -212,7 +212,13 @@ The fix is to compare the **binding region** independently:
 - **Alternative scaffolds** → projected paratope vs. same-class references.
 - **Prior-art arm** → each top prior-art hit's own sequence (`tseq`) is re-numbered and
   its binding region compared with the query's, so a shared PLAbDab framework is reported
-  as context, not as a known molecule.
+  as context, not as a known molecule. The hits compared are the top three overall plus
+  the best public and the best design hit, whatever their rank, since those are the hits
+  `known_sequence` and `existing_design` are judged on. Only a chain that carries the
+  binding site decides — an antibody heavy chain, either TCR chain, a scaffold paratope —
+  as in the target arm: a Fab whose light chain matches a published design's is not that
+  design unless its heavy-chain CDR3 matches too. The light-chain comparison is kept as
+  `light_chain_region_identity`. A lone light chain is judged on itself.
 
 Patent sequences use Markush-style claims, so some reference CDRs contain `X`; those are
 excluded from identity arithmetic and matched only by a wildcard-aware exact test.

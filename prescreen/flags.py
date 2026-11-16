@@ -347,6 +347,13 @@ def evaluate(record: dict, cfg: Config) -> dict:
     # ABSENT from ``per_hit`` was never examined, and there the flag stands with the
     # evidence recording the paratope as unverified.
     per_hit = pa_region.get("per_hit") or {}
+    # Light-chain comparisons: shown beside the deciding one, never deciding on their own
+    # (see priorart.best_region_vs_hits).
+    per_hit_supporting = pa_region.get("per_hit_supporting") or {}
+
+    def supporting(hit: dict | None) -> float | None:
+        value = per_hit_supporting.get((hit or {}).get("target"))
+        return None if value is None else round(value, 4)
 
     def paratope_known(hit: dict | None) -> tuple[bool, float | None]:
         """``(suppressible, identity_for_this_hit)`` for one prior-art hit."""
@@ -365,6 +372,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
             "similarity_check": round(design_sim, 4),
             "region_identity": None if hit_region_id is None else round(hit_region_id, 4),
             "paratope_verified": (hit_region_id is not None) if region_aware else None,
+            "light_chain_region_identity": supporting(best_design),
         }
         if known:
             flags.append("existing_design")
@@ -381,6 +389,7 @@ def evaluate(record: dict, cfg: Config) -> dict:
             "similarity_check": round(pa_sim, 4),
             "region_identity": None if hit_region_id is None else round(hit_region_id, 4),
             "paratope_verified": (hit_region_id is not None) if region_aware else None,
+            "light_chain_region_identity": supporting(best),
             "region_hit": pa_region.get("hit"),
         }
         if known:

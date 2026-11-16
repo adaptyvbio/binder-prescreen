@@ -211,27 +211,51 @@ def best_region_vs_hits(
     second domain mislabelled, so each submitted chain is compared in its own right. A
     single-chain submission does exactly one comparison, as before.
     """
+    from .regions import PARATOPE_CHAINS, focus_region
+
+    # Only a chain that carries the binding site decides whether a hit's paratope is
+    # known: an antibody heavy chain, either TCR chain, a scaffold paratope or a
+    # whole-sequence focus - the same set the target arm lets decide. A light chain is
+    # still compared, and recorded in ``per_hit_supporting``, but it cannot make a
+    # molecule known on its own. Otherwise a Fab whose light chain is a near-germline
+    # kappa (IGKV3-20 is in hundreds of published antibodies) is called a copy of every
+    # design that uses the same light chain, whatever its heavy chain does - while the same
+    # two domains submitted as one scFv string were already judged on CDR-H3 alone,
+    # because extraction from the concatenation focuses on the heavy chain.
+    # A submission with no deciding chain at all (a lone light chain) is judged on what it
+    # has.
+    compared = [
+        (regions, focus_region(regions)[0] in PARATOPE_CHAINS)
+        for regions in chain_regions or []
+    ]
+    if compared and not any(decides for _r, decides in compared):
+        compared = [(regions, True) for regions, _d in compared]
+
     best = None
-    # ``per_hit`` is merged across chains rather than taken from the winning one: a
-    # submission's heavy chain and light chain are compared against the same hit list, and
-    # the question each flag asks is "what is this hit's paratope identity", not "which
-    # chain won". The strongest comparison for a given hit, from whichever chain produced
-    # it, is the answer.
+    # ``per_hit`` is merged across the deciding chains rather than taken from the winning
+    # one: a submission's chains are compared against the same hit list, and the question
+    # each flag asks is "what is this hit's paratope identity", not "which chain won". The
+    # strongest comparison for a given hit, from whichever deciding chain produced it, is
+    # the answer.
     merged: dict = {}
-    for regions in chain_regions or []:
+    supporting: dict = {}
+    for regions, decides in compared:
         got = region_identity_vs_hits(regions, category, region_kind, hits, cache=cache)
+        into = merged if decides else supporting
         for target, value in (got.get("per_hit") or {}).items():
-            prev = merged.get(target)
+            prev = into.get(target)
             if prev is None or value > prev:
-                merged[target] = value
-        if best is None or (got.get("region_identity") or -1.0) > (
-            best.get("region_identity") or -1.0
+                into[target] = value
+        if decides and (
+            best is None
+            or (got.get("region_identity") or -1.0) > (best.get("region_identity") or -1.0)
         ):
             best = got
     if best is None:
         best = region_identity_vs_hits({}, category, region_kind, hits, cache=cache)
     best = dict(best)
     best["per_hit"] = merged
+    best["per_hit_supporting"] = supporting
     return best
 
 
